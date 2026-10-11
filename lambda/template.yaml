@@ -391,12 +391,12 @@ Resources:
   SupervisorsGroup:
     Type: AWS::Cognito::UserPoolGroup
     Condition: UseCognito
-    Properties: { UserPoolId: !Ref UserPool, GroupName: supervisors, Description: Build surveys, change settings, see every result }
+    Properties: { UserPoolId: !Ref UserPool, GroupName: supervisors, Description: "Build surveys, change settings, see every result" }
 
   AgentsGroup:
     Type: AWS::Cognito::UserPoolGroup
     Condition: UseCognito
-    Properties: { UserPoolId: !Ref UserPool, GroupName: agents, Description: See their own survey results }
+    Properties: { UserPoolId: !Ref UserPool, GroupName: agents, Description: "See their own survey results" }
 
   # ---------- Hosting ----------
   SiteBucket:
