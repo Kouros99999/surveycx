@@ -121,6 +121,12 @@
         </div>
         <div class="row end"><button class="btn" type="submit">Save</button></div>
       </form>
+      <form class="card" id="s-hooks" style="margin-top:1rem">
+        <h2>Webhooks</h2>
+        <p class="muted">Every completed response is sent as JSON to these HTTPS URLs, signed with the secret (<code>X-SurveyCX-Signature</code>). Choose <b>all</b> responses or <b>low scores only</b>. Up to five; see the API reference in the help center.</p>
+        <div id="hook-list"></div>
+        <div class="row end"><button type="button" class="btn ghost small" id="add-hook">Add webhook</button><button class="btn" type="submit">Save</button></div>
+      </form>
       <div class="card" id="s-keys" style="margin-top:1rem">
         <h2>Other platforms and BI tools <button type="button" class="btn small" id="new-key">New key</button></h2>
         <p class="muted">An <b>ingest key</b> lets Genesys, another platform or your middleware report finished contacts (<code>POST /api/ingest/&lt;key&gt;/contacts</code>) or answers collected elsewhere (<code>/responses</code>). A <b>data key</b> gives read-only access to responses for a warehouse (<code>GET /api/data/&lt;key&gt;/responses?from&amp;to</code>). A key is shown once when created.</p>
@@ -247,9 +253,10 @@
     $('d-freq').value = d.frequencyDays; $('d-qs').value = d.quietStart; $('d-qe').value = d.quietEnd; $('d-rem').value = d.reminderHours; $('d-sms-from').value = d.smsOrigination || ''; $('d-email-from').value = d.emailFrom || ''; $('d-sms-text').value = d.smsText; $('d-email-subject').value = d.emailSubject; $('d-email-text').value = d.emailText;
     $('a-url').value = a.ingestUrl || ''; $('a-key').value = a.key || '';
     $('b-name').value = b.name || ''; $('b-accent').value = b.accent || '#0f766e'; $('b-logo').value = b.logoUrl || '';
+    renderHooks(settings.webhooks || []);
     applyBrand(b);
     await loadKeys();
-    $('settings-nav').innerHTML = ['s-closed:Closed loop', 's-delivery:Invitations', 's-arena:Arena', 's-brand:Brand', 's-keys:Other platforms and BI', 's-privacy:Privacy requests'].map((x) => { const [id, label] = x.split(':'); return `<a href="#${id}" style="display:block;padding:.4rem .2rem;border-top:1px solid var(--line);text-decoration:none;color:var(--ink)">${label}</a>`; }).join('');
+    $('settings-nav').innerHTML = ['s-closed:Closed loop', 's-delivery:Invitations', 's-arena:Arena', 's-brand:Brand', 's-hooks:Webhooks', 's-keys:Other platforms and BI', 's-privacy:Privacy requests'].map((x) => { const [id, label] = x.split(':'); return `<a href="#${id}" style="display:block;padding:.4rem .2rem;border-top:1px solid var(--line);text-decoration:none;color:var(--ink)">${label}</a>`; }).join('');
   }
   const save = async (patch, msg) => { try { settings = (await api('PUT', '/settings', patch)).settings; toast(msg || 'Saved'); applyBrand(settings.brand); } catch (err) { toast(err.message, true); } };
   $('s-closed').onsubmit = (e) => { e.preventDefault(); save({ closedLoop: { enabled: $('cl-enabled').checked, taskFlowId: $('cl-flow').value.trim(), attribute: $('cl-attr').value.trim() || 'csat' }, connectInstanceId: $('cl-instance').value.trim() }); };
@@ -257,6 +264,13 @@
   $('s-arena').onsubmit = (e) => { e.preventDefault(); save({ arena: { ingestUrl: $('a-url').value.trim(), key: $('a-key').value.trim() } }); };
   $('a-test').onclick = async () => { try { await api('POST', '/settings/arena/test', { agent: $('a-test-agent').value.trim() }); toast('Arena accepted a test score of 5'); } catch (err) { toast(err.message, true); } };
   $('s-brand').onsubmit = (e) => { e.preventDefault(); save({ brand: { name: $('b-name').value.trim(), accent: $('b-accent').value, logoUrl: $('b-logo').value.trim() } }); };
+  function renderHooks(list) {
+    $('hook-list').innerHTML = list.map((w, i) => `<div class="q"><div class="grid" style="grid-template-columns:2fr 1fr 1fr auto;align-items:end"><div><label>URL (https)<input type="url" class="h-url" value="${esc(w.url || '')}" placeholder="https://your-app.example/surveycx"></label></div><div><label>Secret<input type="text" class="h-secret" autocomplete="off" value="${esc(w.secret || '')}"></label></div><div><label>Send<select class="h-events"><option value="completed" ${(w.events || ['completed']).includes('completed') ? 'selected' : ''}>All responses</option><option value="low" ${!(w.events || ['completed']).includes('completed') ? 'selected' : ''}>Low scores only</option></select></label></div><button type="button" class="btn danger small h-rm" data-i="${i}">Remove</button></div></div>`).join('') || '<p class="muted">No webhooks.</p>';
+    $('hook-list').querySelectorAll('.h-rm').forEach((b) => { b.onclick = () => { const cur = readHooks(); cur.splice(+b.dataset.i, 1); renderHooks(cur); }; });
+  }
+  const readHooks = () => [...$('hook-list').querySelectorAll('.q')].map((d) => ({ url: d.querySelector('.h-url').value.trim(), secret: d.querySelector('.h-secret').value.trim(), events: [d.querySelector('.h-events').value] }));
+  $('add-hook').onclick = () => { const cur = readHooks(); if (cur.length >= 5) { toast('Up to five webhooks', true); return; } cur.push({ url: '', secret: '', events: ['completed'] }); renderHooks(cur); };
+  $('s-hooks').onsubmit = (e) => { e.preventDefault(); save({ webhooks: readHooks() }); };
   async function loadKeys() {
     const { keys } = await api('GET', '/keys');
     $('key-list').innerHTML = keys.map((k) => `<li><div><b>${esc(k.label)}</b> <span class="pill">${k.kind}</span><div class="muted">${esc(k.key)} · created ${fmt.day(k.createdAt)} by ${esc(k.createdBy)} · expires ${fmt.day(k.expiresAt)}</div></div><button type="button" class="btn danger small" data-key="${esc(k.id)}">Revoke</button></li>`).join('') || '<li class="muted">No keys.</li>';

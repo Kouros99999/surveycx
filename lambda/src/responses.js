@@ -88,7 +88,16 @@ async function closeLoop(row, survey, settings, deps) {
     try { await c.events.send(new c.PutEventsCommand({ Entries: [{ Source: 'surveycx', DetailType: sc.low ? 'Survey Completed - Low Score' : 'Survey Completed', Detail: JSON.stringify({ contactId: row.contactId, surveyId: survey.id, surveyName: survey.name, channel: row.channel, queue: row.queue, agent: row.agentArn, agentName: row.agentName, scores: sc, answers: row.answers, completedAt: row.completedAt }) }] })); }
     catch (e) { log('event', e); }
   }
-  // 4. Arena: the agent-attributable score as CSAT_RECEIVED through its ingest endpoint.
+  // 4. Webhooks for other apps: the whole response, signed so the receiver can verify it came from this stack.
+  for (const w of settings.webhooks || []) {
+    const wants = w.events || ['completed'];
+    if (!w.url || !(wants.includes('completed') || (sc.low && wants.includes('low')))) continue;   // 'low' alone means only low scores
+    try {
+      const body = { event: sc.low ? 'survey.completed.low' : 'survey.completed', contactId: row.contactId, surveyId: survey.id, surveyName: survey.name, platform: row.platform, channel: row.channel, queue: row.queue, agent: row.agentArn, agentName: row.agentArn ? row.agentName : undefined, scores: sc, answers: row.answers, startedAt: row.startedAt, completedAt: row.completedAt };
+      await (deps.post || exports.post)(w.url, body, w.secret ? { 'x-surveycx-signature': 'sha256=' + crypto.createHmac('sha256', w.secret).update(JSON.stringify(body)).digest('hex') } : {});
+    } catch (e) { log('webhook', e); }
+  }
+  // 5. Arena: the agent-attributable score as CSAT_RECEIVED through its ingest endpoint.
   const ar = settings.arena || {};
   if (ar.ingestUrl && ar.key && row.agentArn && (sc.agentFive != null || sc.five != null)) {
     try {
@@ -98,10 +107,10 @@ async function closeLoop(row, survey, settings, deps) {
   }
 }
 
-function post(url, body) {
+function post(url, body, headers) {
   return new Promise((resolve, reject) => {
     const https = require('https'); const u = new URL(url); const data = JSON.stringify(body);
-    const req = https.request({ hostname: u.hostname, path: u.pathname + u.search, method: 'POST', headers: { 'content-type': 'application/json', 'content-length': Buffer.byteLength(data) }, timeout: 5000 }, (res) => { res.resume(); res.on('end', () => (res.statusCode < 300 ? resolve() : reject(new Error('status ' + res.statusCode)))); });
+    const req = https.request({ hostname: u.hostname, port: u.port || 443, path: u.pathname + u.search, method: 'POST', headers: Object.assign({ 'content-type': 'application/json', 'content-length': Buffer.byteLength(data), 'user-agent': 'SurveyCX' }, headers || {}), timeout: 5000 }, (res) => { res.resume(); res.on('end', () => (res.statusCode < 300 ? resolve() : reject(new Error('status ' + res.statusCode)))); });
     req.on('error', reject); req.on('timeout', () => req.destroy(new Error('timeout'))); req.write(data); req.end();
   });
 }

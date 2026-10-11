@@ -56,11 +56,12 @@ fs.writeFileSync(path.join(out, 'flow-module.json'), JSON.stringify(require('./f
 
 // 4. Template with every CodeUri pointing at the published archive.
 const codeUri = bucket ? `s3://${bucket}/surveycx/${version}/surveycx.zip` : `./surveycx.zip`;
-let tpl = fs.readFileSync(path.join(__dirname, 'template.yaml'), 'utf8');
+let tpl = fs.readFileSync(path.join(__dirname, 'template.yaml'), 'utf8').replace(/\r\n/g, '\n');   // CRLF checkouts must match the same strings
 const before = (tpl.match(/CodeUri: src\//g) || []).length;
 tpl = tpl.replace(/CodeUri: src\/[^\n]*/g, `CodeUri: ${codeUri}`);
 tpl = tpl.replace(/^Description: (.*)$/m, `Description: SurveyCX for Amazon Connect v${version}. $1`);
 if (bucket) tpl = tpl.replace(/(  SiteArchiveUrl:\n    Type: String\n    Default: )''/, `$1'https://${bucket}.s3.${region}.amazonaws.com/surveycx/${version}/site.zip'`);
+if (bucket && !tpl.includes('/site.zip')) { console.error('internal: SiteArchiveUrl default was not set; the template layout changed'); process.exit(1); }
 fs.writeFileSync(path.join(out, 'template.yaml'), tpl);
 
 // 5. Checksums.

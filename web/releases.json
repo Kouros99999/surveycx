@@ -11,7 +11,7 @@
       "Closed loop: a low score opens an Amazon Connect Task with the answers and a link to the contact; scores are written back as contact attributes; an EventBridge event per response.",
       "Results page: CSAT, NPS, effort and completion by agent, queue, driver, channel and day, with the previous period for comparison, every response with its comment, CSV export. Agents see their own results.",
       "Arena feed: each agent-attributable score is sent to Arena for Amazon Connect as a survey score.",
-      "Other platforms: an ingest endpoint takes finished contacts from Genesys or any platform and sends the invitations; answers collected elsewhere can be posted in; a read-only data key for warehouses.",
+      "API for other applications: ingest keys report contacts, request survey links to deliver in your own chat widget or app, read the survey definitions and post answers; data keys read responses and the aggregate report; signed webhooks per completed response. Documented in the API reference.",
       "Privacy: responses expire after the retention you set; delete everything about a customer or a contact from the console. Public routes are rate-limited.",
       "Sign-ins: `sync-users.js` creates supervisor and agent accounts from the Connect directory in one command.",
       "AWS Marketplace: billed per completed response, 30-day trial with up to 500 responses a day free."
@@ -26,6 +26,7 @@
       "results",
       "arena",
       "other-platforms",
+      "api-reference",
       "security-and-data",
       "billing",
       "settings-reference",

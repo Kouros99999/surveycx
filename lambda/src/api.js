@@ -18,7 +18,12 @@
  *   POST /s/{token}/optout                                never survey this customer again
  *   POST /ingest/{key}/contacts { contacts: [...] }       any platform reports finished contacts (contacts.js shape); invitations go out
  *   POST /ingest/{key}/responses { responses: [...] }     answers collected elsewhere: { contactId, surveyId?, agent?, queue?, channel?, answers }
+ *   POST /ingest/{key}/invitations { contactId, agent?, queue?, channel?, phone?, email?, surveyId?, deliver? }
+ *                                                         a survey link for a contact that the caller delivers itself (its own chat widget, SMS or app); deliver: true sends it as usual
+ *   GET  /ingest/{key}/surveys                            the active survey definitions, for an app that renders the questions itself
  *   GET  /data/{key}/responses?from&to                    read API for warehouses and BI tools
+ *   GET  /data/{key}/report?from&to[&surveyId][&queue][&agent]  the aggregate the results page shows
+ *   Webhooks (settings.webhooks): every completed response is POSTed as JSON, signed with X-SurveyCX-Signature (HMAC-SHA256 of the body)
  *   GET  /health
  */
 'use strict';
@@ -60,6 +65,9 @@ function route(method, path) {
   if (method === 'POST' && (x = m(/^\/s\/([^/]+)\/optout$/))) return { name: 'webOptout', token: decodeURIComponent(x[1]), public: true };
   if (method === 'POST' && (x = m(/^\/ingest\/([^/]+)\/contacts$/))) return { name: 'ingestContacts', key: decodeURIComponent(x[1]), public: true };
   if (method === 'POST' && (x = m(/^\/ingest\/([^/]+)\/responses$/))) return { name: 'ingestResponses', key: decodeURIComponent(x[1]), public: true };
+  if (method === 'POST' && (x = m(/^\/ingest\/([^/]+)\/invitations$/))) return { name: 'ingestInvitations', key: decodeURIComponent(x[1]), public: true };
+  if (method === 'GET' && (x = m(/^\/ingest\/([^/]+)\/surveys$/))) return { name: 'ingestSurveys', key: decodeURIComponent(x[1]), public: true };
+  if (method === 'GET' && (x = m(/^\/data\/([^/]+)\/report$/))) return { name: 'dataReport', key: decodeURIComponent(x[1]), public: true };
   if (method === 'GET' && (x = m(/^\/data\/([^/]+)\/responses$/))) return { name: 'dataResponses', key: decodeURIComponent(x[1]), public: true };
   return null;
 }
@@ -72,6 +80,7 @@ function publicSettings(s) {
   out.closedLoop = Object.assign({ enabled: true, attribute: 'csat', taskFlowId: '' }, out.closedLoop || {});
   out.arena = Object.assign({ ingestUrl: '' }, out.arena || {});
   if (out.arena.key) out.arena.key = '••••' + String(out.arena.key).slice(-4);
+  out.webhooks = (out.webhooks || []).map((w) => Object.assign({}, w, { secret: w.secret ? '••••' + String(w.secret).slice(-4) : '' }));
   out.brand = Object.assign({ name: '', accent: '#0f766e', logoUrl: '' }, out.brand || {});
   return out;
 }
@@ -79,6 +88,8 @@ function publicSettings(s) {
 function mergeSettings(cur, body) {
   const out = JSON.parse(JSON.stringify(cur || {}));
   for (const section of ['delivery', 'closedLoop', 'arena', 'brand']) if (body[section] && typeof body[section] === 'object') out[section] = Object.assign({}, out[section] || {}, body[section]);
+  // Webhooks: up to 5 { url, secret, events: ['completed','low'] }; a masked secret sent back keeps the stored one. HTTPS only.
+  if (Array.isArray(body.webhooks)) out.webhooks = body.webhooks.slice(0, 5).map((w, i) => { const prev = ((cur && cur.webhooks) || [])[i] || {}; const url = String((w && w.url) || '').trim().slice(0, 500); let secret = String((w && w.secret) || '').trim().slice(0, 200); if (secret.startsWith('••••')) secret = prev.secret || ''; const events = Array.isArray(w && w.events) ? w.events.filter((e) => e === 'completed' || e === 'low') : []; return { url, secret, events: events.length ? events : ['completed'], label: String((w && w.label) || '').slice(0, 60) }; }).filter((w) => /^https:\/\//.test(w.url));
   if (body.connectInstanceId !== undefined) out.connectInstanceId = String(body.connectInstanceId || '').trim().slice(0, 100);
   if (body.siteUrl !== undefined) out.siteUrl = String(body.siteUrl || '').trim().replace(/\/$/, '').slice(0, 200);
   if (out.arena && typeof out.arena.key === 'string' && out.arena.key.startsWith('••••')) out.arena.key = (cur && cur.arena && cur.arena.key) || '';
@@ -237,6 +248,36 @@ function makeHandler(deps) {
             } catch (err) { rejected.push({ index: i, error: err.message }); }
           }
           return json(rejected.length && !accepted ? 400 : 200, { accepted, duplicates, rejected });
+        }
+        case 'ingestInvitations': {
+          if (!(await keyOf(r.key, 'ingest'))) return json(401, { error: 'ingest key is invalid or expired' });
+          const b = parse(event);
+          let c;
+          try { c = contacts.normalizeContact({ contactId: b.contactId, channel: b.channel && contacts.CHANNELS.includes(b.channel) ? b.channel : 'voice', agent: b.agent, agentName: b.agentName, queue: b.queue, attributes: b.attributes, phone: b.phone, email: b.email, platform: b.platform, endedAt: b.endedAt }, now().toISOString()); } catch (e) { return json(400, { error: e.message }); }
+          const surveys = await s.listSurveys(), settings = await s.getSettings();
+          if (b.deliver === true) return json(200, Object.assign({ contactId: c.contactId }, await delivery.considerOutbound(s, c, settings, surveys, now().getTime())));
+          // The caller delivers the link itself: no channel rules, no sending; opt-out still applies to a known address.
+          const survey = b.surveyId ? surveys.find((x) => x.id === b.surveyId && x.status === 'active') : S.pickSurvey(surveys.map((x) => Object.assign({}, x, { target: Object.assign({}, x.target, { channels: S.CHANNELS }) })), c);
+          if (!survey) return json(404, { error: b.surveyId ? 'no active survey with that id' : 'no active survey matches this contact; send surveyId' });
+          const hash = s.customerHash(c.phone || c.email), cust = await s.getCustomer(hash);
+          if (cust && cust.optOut) return json(200, { contactId: c.contactId, invited: false, reason: 'opted out' });
+          if (c.agent) await s.touchAgent(c.agent, c.agentName, c.queue, now().toISOString());
+          const row = await responses.offer(s, c, survey, 'web', now().toISOString(), { customerHash: hash || undefined, platform: c.platform });
+          if (!row.token) return json(409, { error: 'this contact was already surveyed in another channel' });
+          if (hash) await s.touchCustomer(hash, { lastInvitedAt: now().toISOString(), channel: 'web' });
+          const siteUrl = process.env.SITE_URL || settings.siteUrl || '';
+          return json(201, { contactId: c.contactId, surveyId: survey.id, token: row.token, url: `${siteUrl}/survey.html#${row.token}`, expiresAt: new Date(now().getTime() + 14 * 86400000).toISOString(), status: row.status });
+        }
+        case 'ingestSurveys': {
+          if (!(await keyOf(r.key, 'ingest'))) return json(401, { error: 'ingest key is invalid or expired' });
+          return json(200, { surveys: (await s.listSurveys()).filter((x) => x.status === 'active').map((x) => ({ id: x.id, name: x.name, language: x.language, target: x.target, intro: x.intro, outro: x.outro, questions: x.questions, lowScore: x.lowScore })) });
+        }
+        case 'dataReport': {
+          if (!(await keyOf(r.key, 'data'))) return json(401, { error: 'data key is invalid or expired' });
+          const { from, to } = rangeOf(qs);
+          const surveys = await s.listSurveys();
+          const rows = (await s.responsesBetween(from, to)).filter((x) => (!qs.surveyId || x.surveyId === qs.surveyId) && (!qs.queue || x.queue === qs.queue) && (!qs.agent || x.agentArn === qs.agent));
+          return json(200, Object.assign({ from, to, surveys: surveys.map((x) => ({ id: x.id, name: x.name, status: x.status })) }, S.aggregate(rows, surveys)));
         }
         case 'dataResponses': {
           if (!(await keyOf(r.key, 'data'))) return json(401, { error: 'data key is invalid or expired' });

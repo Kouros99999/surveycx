@@ -115,3 +115,31 @@ test('ingest keys: contacts from another platform are invited; responses collect
   assert.equal((await call(h, 'DELETE', '/keys/' + ik, null, sup)).statusCode, 200);
   assert.equal((await call(h, 'POST', '/ingest/' + ik + '/contacts', { contacts: [] })).statusCode, 401);
 });
+
+test('partner API: invitations return a link the caller delivers, surveys are readable, report by data key, webhooks are signed', async () => {
+  const s = mem.make(); await s.putSurvey(S.normalizeSurvey({ id: 'default', name: 'Default', questions: [{ id: 'csat', type: 'rating', text: 'How did we do?' }], lowScore: { threshold: 2 } }));
+  await s.putSettings({ siteUrl: 'https://site.test', webhooks: [{ url: 'https://hooks.test/a', secret: 'shh', events: ['completed'] }, { url: 'https://hooks.test/low', secret: '', events: ['low'] }] });
+  const posts = [];
+  const h = api.makeHandler({ store: s, now: () => new Date('2026-10-11T12:00:00Z'), clients: {}, post: async (u, b, headers) => posts.push({ u, b, headers }) });
+  const ik = (await call(h, 'POST', '/keys', { kind: 'ingest' }, sup)).json.key, dk = (await call(h, 'POST', '/keys', { kind: 'data' }, sup)).json.key;
+  let r = await call(h, 'POST', '/ingest/' + ik + '/invitations', { contactId: 'v1', agent: 'vericx-agent-9', agentName: 'Vee', queue: 'Care', platform: 'vericx' });
+  assert.equal(r.statusCode, 201); assert.match(r.json.url, /^https:\/\/site\.test\/survey\.html#t_/); assert.equal(r.json.surveyId, 'default');
+  const token = r.json.token;
+  assert.equal((await call(h, 'POST', '/ingest/' + ik + '/invitations', { contactId: 'v1' })).json.token, token, 'same contact, same link');
+  assert.equal((await call(h, 'POST', '/ingest/' + ik + '/invitations', { contactId: 'v2', surveyId: 'nope' })).statusCode, 404);
+  assert.equal((await call(h, 'POST', '/ingest/' + ik + '/invitations', {})).statusCode, 400);
+  r = await call(h, 'GET', '/ingest/' + ik + '/surveys'); assert.equal(r.json.surveys.length, 1); assert.equal(r.json.surveys[0].questions[0].id, 'csat');
+  assert.equal((await call(h, 'GET', '/ingest/' + dk + '/surveys')).statusCode, 401);
+  // the vendor's own UI collects the answer and posts it through the web endpoints
+  r = await call(h, 'POST', '/s/' + token + '/answers', { answers: { csat: 1 } });
+  assert.equal(r.json.status, 'completed');
+  assert.equal(posts.length, 2); assert.equal(posts[0].u, 'https://hooks.test/a'); assert.equal(posts[0].b.event, 'survey.completed.low'); assert.equal(posts[0].b.agent, 'vericx-agent-9');
+  assert.match(posts[0].headers['x-surveycx-signature'], /^sha256=[0-9a-f]{64}$/); assert.deepEqual(posts[1].headers, {});
+  // a good score does not reach the low-only hook
+  await call(h, 'POST', '/ingest/' + ik + '/invitations', { contactId: 'v3' }); await call(h, 'POST', '/s/' + (await s.getResponse('v3')).token + '/answers', { answers: { csat: 5 } });
+  assert.equal(posts.length, 3); assert.equal(posts[2].u, 'https://hooks.test/a');
+  r = await call(h, 'GET', '/data/' + dk + '/report', null, null, { from: '2026-10-11', to: '2026-10-11' }); assert.equal(r.json.overall.n, 2); assert.equal(r.json.agents[0].id, 'vericx-agent-9');
+  assert.equal((await call(h, 'GET', '/data/' + ik + '/report')).statusCode, 401);
+  r = await call(h, 'PUT', '/settings', { webhooks: [{ url: 'https://hooks.test/a', secret: '••••shh', events: ['completed'] }, { url: 'http://insecure', secret: 'x' }] }, sup);
+  assert.equal(r.json.settings.webhooks.length, 1, 'http dropped'); assert.equal(r.json.settings.webhooks[0].secret, '••••shh'); assert.equal((await s.getSettings()).webhooks[0].secret, 'shh', 'masked secret kept');
+});
