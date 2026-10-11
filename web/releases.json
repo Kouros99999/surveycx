@@ -5,7 +5,7 @@
     "title": "First release",
     "summary": "Post-contact surveys on the IVR, in chat, by SMS and email, with results by agent, queue and driver, a follow-up Task on every low score, and a feed into Arena.",
     "changes": [
-      "Survey builder: rating 1-5, NPS 0-10, effort 1-7, yes/no, multiple choice and free text; up to ten questions; one survey per queue or contact attribute; sampling; a skip rule so an open question is asked only after a low score; per-question agent-attributable flag.",
+      "Survey builder: rating 1-5, NPS 0-10, effort 1-7, yes/no, multiple choice and free text; up to ten questions; one survey per queue or contact attribute; sampling; a skip rule so an open question is asked only after a low score; per-question agent-attributable flag. A flow that has already decided sets the contact attribute surveycx to skip, or to a survey id.",
       "Voice and chat: a flow module runs the survey in the disconnect flow; callers answer on the keypad, chat customers reply in the chat.",
       "SMS and email invitations with a hosted web survey, one-click rating in the email, a frequency cap, a daytime send window that follows the customer's time zone when their number reveals it, one optional reminder, STOP handling and a hashed suppression list.",
       "Closed loop: a low score opens an Amazon Connect Task with the answers and a link to the contact; scores are written back as contact attributes; an EventBridge event per response.",

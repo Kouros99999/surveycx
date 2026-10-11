@@ -25,6 +25,11 @@ test('pickSurvey prefers attribute, then queue, then the untargeted default; cha
   assert.equal(S.pickSurvey(all, { queue: 'Billing', channel: 'chat', attributes: { tier: 'gold' } }).id, 'q', 'VIP survey is voice only');
   assert.equal(S.pickSurvey(all, { queue: 'Sales', channel: 'chat' }).id, 'd');
   assert.equal(S.pickSurvey([Object.assign({}, q, { status: 'paused' })], { queue: 'Billing', channel: 'voice' }), null);
+  // the flow decided before the agent: skip, or force a survey
+  assert.equal(S.pickSurvey(all, { queue: 'Billing', channel: 'voice', attributes: { surveycx: 'skip' } }), null);
+  assert.equal(S.pickSurvey(all, { queue: 'Billing', channel: 'voice', attributes: { surveycx: 'no' } }), null);
+  assert.equal(S.pickSurvey(all, { queue: 'Sales', channel: 'voice', attributes: { surveycx: 'q' } }).id, 'q', 'forced');
+  assert.equal(S.pickSurvey(all, { queue: 'Billing', channel: 'voice', attributes: { surveycx: 'unknown-id' } }).id, 'q', 'unknown id falls back to targeting');
 });
 
 test('sampled is deterministic per contact and respects the percentage roughly', () => {

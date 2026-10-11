@@ -29,6 +29,7 @@
   const TYPES = { rating: { min: 1, max: 5 }, nps: { min: 0, max: 10 }, ces: { min: 1, max: 7 }, yesno: { min: 0, max: 1 }, choice: { min: 1, max: 9 }, text: {} };
   const CHANNELS = ['voice', 'chat', 'sms', 'email', 'web'];
   const MAX_QUESTIONS = 10;
+  const CONTROL_ATTRIBUTE = 'surveycx';   // contact attribute a flow sets to skip the survey or force one
   const str = (v, max) => (v == null ? '' : String(v)).trim().slice(0, max || 300);
   const slug = (s) => str(s, 60).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'q';
 
@@ -101,6 +102,10 @@
     const ch = contact.channel || 'voice';
     const live = (surveys || []).filter((s) => s.status === 'active' && s.target.channels.includes(ch));
     const attrs = contact.attributes || {};
+    // The flow (or the agent desktop) may have decided already: surveycx=skip means never, surveycx=<survey id> forces that survey.
+    const decided = String(attrs[CONTROL_ATTRIBUTE] || '').trim().toLowerCase();
+    if (decided === 'skip' || decided === 'no' || decided === 'false' || decided === 'none') return null;
+    if (decided) { const forced = live.find((s) => s.id.toLowerCase() === decided); if (forced) return forced; }
     const byAttr = live.find((s) => s.target.attribute && attrs[s.target.attribute.name] != null && (s.target.attribute.value === '' || String(attrs[s.target.attribute.name]) === s.target.attribute.value));
     if (byAttr) return byAttr;
     const byQueue = live.find((s) => contact.queue && s.target.queues.includes(contact.queue));
@@ -274,5 +279,5 @@
     { id: 'why', type: 'text', text: 'What could we have done better?', skipUnless: { question: 'csat', atMost: 3 } } ],
     lowScore: { enabled: true, threshold: 2, question: 'any' } };
 
-  return { TYPES, CHANNELS, MAX_QUESTIONS, normalizeSurvey, pickSurvey, sampled, nextQuestion, parseAnswer, voicePrompt, voiceDigits, chatPrompt, promptFor, scoreResponse, npsOf, csatOf, toFive, aggregate, toCsv, DEFAULT_SURVEY };
+  return { TYPES, CHANNELS, MAX_QUESTIONS, CONTROL_ATTRIBUTE, normalizeSurvey, pickSurvey, sampled, nextQuestion, parseAnswer, voicePrompt, voiceDigits, chatPrompt, promptFor, scoreResponse, npsOf, csatOf, toFive, aggregate, toCsv, DEFAULT_SURVEY };
 });

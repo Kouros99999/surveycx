@@ -35,6 +35,8 @@ Each survey has a target:
 
 When several surveys match, the attribute match wins, then the queue match, then the default. One survey per contact, ever.
 
+**Deciding in the flow.** Often the inbound flow already knows whether a contact should be surveyed, before any agent is involved. Set the contact attribute `surveycx` to `skip` and no survey runs on any channel for that contact, whatever the targeting; set it to a survey's id to force that survey. The attribute can be set by a *Set contact attributes* block, from CRM data in a Lambda, or by the agent desktop through the Connect API. The same applies to contacts reported through the API: `"attributes": { "surveycx": "skip" }`.
+
 **Channels** limit where the survey runs: voice (IVR), chat (in the chat), SMS and email (invitations with a web link), web. A survey with no SMS or email channel never sends an invitation.
 
 **Sample %** surveys only that share of eligible contacts, chosen deterministically per contact.

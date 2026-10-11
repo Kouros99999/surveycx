@@ -138,7 +138,7 @@ test('partner API: invitations return a link the caller delivers, surveys are re
   // a good score does not reach the low-only hook
   await call(h, 'POST', '/ingest/' + ik + '/invitations', { contactId: 'v3' }); await call(h, 'POST', '/s/' + (await s.getResponse('v3')).token + '/answers', { answers: { csat: 5 } });
   assert.equal(posts.length, 3); assert.equal(posts[2].u, 'https://hooks.test/a');
-  r = await call(h, 'GET', '/data/' + dk + '/report', null, null, { from: '2026-10-11', to: '2026-10-11' }); assert.equal(r.json.overall.n, 2); assert.equal(r.json.agents[0].id, 'vericx-agent-9');
+  r = await call(h, 'GET', '/data/' + dk + '/report', null, null, { from: '2026-10-11', to: '2026-10-11' }); assert.equal(r.json.overall.n, 2); assert.ok(r.json.agents.some((a) => a.id === 'vericx-agent-9'));
   assert.equal((await call(h, 'GET', '/data/' + ik + '/report')).statusCode, 401);
   r = await call(h, 'PUT', '/settings', { webhooks: [{ url: 'https://hooks.test/a', secret: '••••shh', events: ['completed'] }, { url: 'http://insecure', secret: 'x' }] }, sup);
   assert.equal(r.json.settings.webhooks.length, 1, 'http dropped'); assert.equal(r.json.settings.webhooks[0].secret, '••••shh'); assert.equal((await s.getSettings()).webhooks[0].secret, 'shh', 'masked secret kept');

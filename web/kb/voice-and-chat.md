@@ -28,6 +28,10 @@ An invalid answer is re-asked once with the prompt repeated. Ten seconds of sile
 
 Test with a call: have the agent hang up first; the customer should hear the intro within a second.
 
+## Deciding before the agent
+
+If the flow already knows the contact should not be surveyed (an internal caller, a repeat caller, a complaint line), set the contact attribute `surveycx` to `skip` anywhere before the disconnect flow and the module ends immediately. Set it to a survey id to force that survey regardless of queue. See [Building a survey](kb.html?a=survey-builder).
+
 ## What the customer hears and sees
 
 Prompts are generated from the question text:
