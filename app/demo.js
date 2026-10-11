@@ -32,7 +32,7 @@
       if ((m = path.match(/^\/surveys\/([^/]+)$/))) { const id = decodeURIComponent(m[1]); const cur = await store.getSurvey(id); if (!cur) return bad(404, 'not found'); if (method === 'DELETE') { await store.deleteSurvey(id); return ok({ deleted: id }); } if (method === 'PUT') { try { const s = S.normalizeSurvey(Object.assign({}, body, { id }), cur); s.updatedAt = new Date().toISOString(); s.updatedBy = 'demo'; await store.putSurvey(s); return ok({ survey: s }); } catch (e) { return bad(400, e.message); } } return ok({ survey: cur }); }
       if (path === '/settings') { if (method === 'PUT') { const cur = await store.getSettings(); for (const k of ['delivery', 'closedLoop', 'arena', 'brand']) if (body[k]) cur[k] = Object.assign({}, cur[k] || {}, body[k]); await store.putSettings(cur); } const s = await store.getSettings(); return ok({ settings: { delivery: Object.assign({ frequencyDays: 30, quietStart: 8, quietEnd: 21, reminderHours: 0, smsText: '{brand}: thanks for contacting us today. Could you answer 3 quick questions? {link} Reply STOP to opt out.', emailSubject: 'How did we do today?', emailText: 'Thank you for contacting {brand}. Please take a minute to tell us how we did: {link}' }, s.delivery || {}), closedLoop: Object.assign({ enabled: true, attribute: 'csat', taskFlowId: '' }, s.closedLoop || {}), arena: Object.assign({ ingestUrl: '' }, s.arena || {}, s.arena && s.arena.key ? { key: '••••' + s.arena.key.slice(-4) } : {}), brand: Object.assign({ name: '', accent: '#0f766e', logoUrl: '' }, s.brand || {}), connectInstanceId: s.connectInstanceId || '' } }); }
       if (path === '/settings/arena/test') return ok({ ok: true });
-      if (path === '/report') { const { from, to, list } = await rows(); const surveys = await store.listSurveys(); return ok(Object.assign({ from, to, surveys: surveys.map((x) => ({ id: x.id, name: x.name, status: x.status })) }, S.aggregate(list, surveys))); }
+      if (path === '/report') { const { from, to, list } = await rows(); const surveys = await store.listSurveys(); return ok(Object.assign({ from, to, surveys: surveys.map((x) => ({ id: x.id, name: x.name, status: x.status })), themes: await store.getThemes('*', to) }, S.aggregate(list, surveys))); }
       if (path === '/responses') { const { from, to, list } = await rows(); return ok({ from, to, responses: list.slice(-1000).reverse() }); }
       if ((m = path.match(/^\/responses\/([^/]+)$/))) { const r = await store.getResponse(decodeURIComponent(m[1])); if (!r) return bad(404, 'not found'); if (method === 'DELETE') { await store.deleteResponse(r.contactId); return ok({ deleted: r.contactId }); } return ok({ response: r, survey: await store.getSurvey(r.surveyId) }); }
       if (path === '/export.csv') { const { list } = await rows(); return { status: 200, csv: true, body: S.toCsv(list, await store.listSurveys()) }; }
@@ -60,7 +60,7 @@
 
   /** The in-memory store, same shape as lambda/src/memstore.js, for the browser. */
   function memStore() {
-    const surveys = new Map(), responses = new Map(), tokens = new Map(), agents = new Map(); let settings = {};
+    const surveys = new Map(), responses = new Map(), tokens = new Map(), agents = new Map(), themes = new Map(); let settings = {};
     const dayOf = (iso) => String(iso).slice(0, 10);
     return {
       async listSurveys() { return [...surveys.values()]; }, async getSurvey(id) { return surveys.get(id) || null; }, async putSurvey(s) { surveys.set(s.id, s); }, async deleteSurvey(id) { surveys.delete(id); },
@@ -71,6 +71,7 @@
       async putToken(t, id) { tokens.set(t, id); }, async getToken(t) { return tokens.get(t) || null; },
       async touchAgent(arn, name, queue, at) { agents.set(arn, { arn, name, queue, lastSeen: at }); }, async listAgents() { return [...agents.values()]; },
       async touchCustomer() {}, async getCustomer() { return null; },
+      async putThemes(id, day, d) { themes.set(id + '#' + day, d); }, async getThemes(id, day) { const k = [...themes.keys()].filter((x) => x.startsWith(id + '#') && x.slice(id.length + 1) <= day).sort(); return k.length ? themes.get(k[k.length - 1]) : null; },
     };
   }
 })();

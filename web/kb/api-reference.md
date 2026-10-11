@@ -55,7 +55,7 @@ Each response is stored, scored and closed-loop processed like SurveyCX's own (T
 
 `GET /api/data/{key}/responses?from=2026-10-01&to=2026-10-31` the rows (one per response, with `answers` and `scores`), up to 92 days per call.
 
-`GET /api/data/{key}/report?from&to[&surveyId][&queue][&agent][&tenant]` the aggregate the results page shows: `overall`, `agents`, `queues`, `drivers`, `channels`, `tenants`, `days`, each with `n`, `offered`, `completion`, `csat`, `csatPct`, `nps`, `ces`, `five`, `low`.
+`GET /api/data/{key}/report?from&to[&surveyId][&queue][&agent][&tenant]` the aggregate the results page shows: `overall`, `agents`, `queues`, `drivers`, `channels`, `tenants`, `days` (each with comment and sentiment counts when analysis is on), plus `themes` (the newest daily themes with example quotes), each with `n`, `offered`, `completion`, `csat`, `csatPct`, `nps`, `ces`, `five`, `low`.
 
 ## Webhooks
 
@@ -64,7 +64,7 @@ Each response is stored, scored and closed-loop processed like SurveyCX's own (T
 ```json
 { "event": "survey.completed.low", "contactId": "conv-8f3a", "tenant": "acme", "surveyId": "default", "surveyName": "Post-contact survey", "platform": "connect",
   "channel": "voice", "queue": "Support", "agent": "arn:…", "agentName": "Ann Lee",
-  "scores": { "csat": 1, "nps": 3, "ces": 2, "five": 1.5, "agentFive": 1, "low": true }, "answers": { "csat": 1, "why": "Waited 40 minutes" },
+  "scores": { "csat": 1, "nps": 3, "ces": 2, "five": 1.5, "agentFive": 1, "low": true }, "sentiment": { "label": "negative", "negative": 0.91 }, "answers": { "csat": 1, "why": "Waited 40 minutes" },
   "startedAt": "…", "completedAt": "…" }
 ```
 

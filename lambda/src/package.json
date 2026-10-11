@@ -8,7 +8,9 @@
     "test": "node --test"
   },
   "dependencies": {
+    "@aws-sdk/client-bedrock-runtime": "^3.600.0",
     "@aws-sdk/client-cloudfront": "^3.600.0",
+    "@aws-sdk/client-comprehend": "^3.600.0",
     "@aws-sdk/client-cognito-identity-provider": "^3.600.0",
     "@aws-sdk/client-connect": "^3.600.0",
     "@aws-sdk/client-dynamodb": "^3.600.0",

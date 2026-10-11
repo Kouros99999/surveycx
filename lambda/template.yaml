@@ -44,6 +44,15 @@ Parameters:
     Default: 400
     MinValue: 30
     Description: Days survey responses are kept before DynamoDB removes them.
+  VerbatimAnalysis:
+    Type: String
+    Default: disabled
+    AllowedValues: [enabled, disabled]
+    Description: enabled scores the sentiment of every free-text answer (Amazon Comprehend) and extracts daily themes with example quotes (Amazon Bedrock). Text is redacted of emails, phone, card and account numbers before it is sent. Needs model access to the chosen model in Bedrock.
+  ThemesModelId:
+    Type: String
+    Default: us.anthropic.claude-haiku-4-5-20251001-v1:0
+    Description: Bedrock model (or inference profile) id used for theme extraction when VerbatimAnalysis is enabled.
   Provider:
     Type: String
     Default: connect
@@ -99,6 +108,7 @@ Parameters:
 
 Conditions:
   UseCognito: !Equals [!Ref AuthMode, cognito]
+  UseAnalysis: !Equals [!Ref VerbatimAnalysis, enabled]
   OnConnect: !Not [!Equals [!Ref ConnectInstanceId, '']]
   PinInstance: !Not [!Equals [!Ref ConnectInstanceUrl, '']]
   OnMarketplace: !Not [!Equals [!Ref MarketplaceProductCode, '']]
@@ -125,6 +135,7 @@ Globals:
         PROVIDER: !Ref Provider
         PARTNER: !Ref Partner
         SURVEYCX_VERSION: 0.0.0-dev   # replaced by the release build
+        VERBATIM_ANALYSIS: !Ref VerbatimAnalysis
 
 Resources:
   ContactRecordStream:
@@ -158,6 +169,20 @@ Resources:
       PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true }
       SSESpecification: { SSEEnabled: true }
 
+  AnalysisPolicy:
+    # Sentiment on completion (flow, API and sender functions complete responses) and themes (the daily job).
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action: [comprehend:DetectSentiment]
+            Resource: '*'
+          - Effect: Allow
+            Action: [bedrock:InvokeModel, bedrock:Converse]
+            Resource: '*'
+
   ConnectPolicy:
     # Shared by the functions that talk to Amazon Connect: write scores onto contacts and open Tasks.
     Type: AWS::IAM::ManagedPolicy
@@ -183,6 +208,7 @@ Resources:
       Policies:
         - DynamoDBCrudPolicy: { TableName: !Ref Table }
         - !Ref ConnectPolicy
+        - !Ref AnalysisPolicy
 
   FlowInvokePermission:
     Type: AWS::Lambda::Permission
@@ -207,6 +233,7 @@ Resources:
         - DynamoDBCrudPolicy: { TableName: !Ref Table }
         - KinesisStreamReadPolicy: { StreamName: !Ref ContactRecordStream }
         - !Ref ConnectPolicy
+        - !Ref AnalysisPolicy
       Events:
         Stream:
           Type: Kinesis
@@ -259,6 +286,28 @@ Resources:
           Properties:
             Topic: !Ref InboundSmsTopicArn
 
+  ThemesFunction:
+    Type: AWS::Serverless::Function
+    Condition: UseAnalysis
+    Properties:
+      FunctionName: !Sub surveycx-themes-${AWS::StackName}
+      CodeUri: src/            # per function: aws cloudformation package ignores Globals.CodeUri
+      Handler: themes.handler
+      Timeout: 300
+      MemorySize: 512
+      Environment:
+        Variables:
+          THEMES_MODEL_ID: !Ref ThemesModelId
+      Policies:
+        - DynamoDBCrudPolicy: { TableName: !Ref Table }
+        - !Ref AnalysisPolicy
+      Events:
+        Hourly:
+          Type: Schedule
+          Properties:
+            Schedule: cron(35 * * * ? *)   # hourly; extracts themes once per local day for the trailing 30 days
+            Description: Extract verbatim themes from survey comments
+
   MeteringFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -299,6 +348,7 @@ Resources:
       Policies:
         - DynamoDBCrudPolicy: { TableName: !Ref Table }
         - !Ref ConnectPolicy
+        - !Ref AnalysisPolicy
       Events:
         WebSurvey:
           Type: HttpApi

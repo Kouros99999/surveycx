@@ -13,4 +13,4 @@ jobs:
         with:
           node-version: 22
       - run: node lambda/build.js
-      - run: node --test app/surveycx-core.test.js app/surveycx-auth.test.js lambda/src/store.test.js lambda/src/flow.test.js lambda/src/delivery.test.js lambda/src/api.test.js lambda/src/metering.test.js lambda/src/clock.test.js lambda/src/site-deployer.test.js lambda/seller/register.test.js lambda/flow-module.test.js web/releases.test.js
+      - run: node --test app/surveycx-core.test.js app/surveycx-auth.test.js lambda/src/store.test.js lambda/src/flow.test.js lambda/src/delivery.test.js lambda/src/api.test.js lambda/src/metering.test.js lambda/src/clock.test.js lambda/src/site-deployer.test.js lambda/src/verbatim.test.js lambda/seller/register.test.js lambda/flow-module.test.js web/releases.test.js

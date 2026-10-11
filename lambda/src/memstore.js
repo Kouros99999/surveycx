@@ -6,7 +6,7 @@ const clock = require('./clock.js');
 const real = require('./store.js');
 
 function make() {
-  const surveys = new Map(), responses = new Map(), tokens = new Map(), customers = new Map(), outbox = new Map(), keys = new Map(), agents = new Map(), meters = new Map();
+  const surveys = new Map(), responses = new Map(), tokens = new Map(), customers = new Map(), outbox = new Map(), keys = new Map(), agents = new Map(), meters = new Map(), themes = new Map();
   let settings = {};
   return {
     responseItem: real.responseItem, customerHash: real.customerHash, strip: real.strip, RETENTION_DAYS: real.RETENTION_DAYS,
@@ -22,6 +22,7 @@ function make() {
     async listKeys() { return [...keys.entries()].map(([key, m]) => Object.assign({ key }, m)); }, async getKey(k) { return keys.get(k) || null; }, async putKey(k, m) { keys.set(k, m); }, async deleteKey(k) { keys.delete(k); },
     async touchAgent(arn, name, queue, at) { if (!arn) return; const cur = agents.get(arn) || {}; agents.set(arn, { name: name || cur.name || arn.split('/').pop(), queue: queue || 'unassigned', lastSeen: at }); }, async listAgents() { return [...agents.entries()].map(([arn, a]) => Object.assign({ arn }, a)); },
     async getMeter(d) { return meters.get(d) || null; }, async putMeter(d, v) { meters.set(d, v); },
+    async putThemes(id, day, data) { themes.set(`${id}#${day}`, Object.assign({}, data)); }, async getThemes(id, day) { const keys = [...themes.keys()].filter((k) => k.startsWith(id + '#') && k.slice(id.length + 1) <= day).sort(); return keys.length ? themes.get(keys[keys.length - 1]) : null; },
     _dump: () => ({ surveys, responses, tokens, customers, outbox, keys, agents, meters, settings }),
   };
 }

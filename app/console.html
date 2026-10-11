@@ -111,6 +111,12 @@
         <div class="row"><label for="a-test-agent" style="margin:0">Test with agent id</label><input id="a-test-agent" type="text" style="width:auto;flex:1" placeholder="arn:aws:connect:…:agent/…"><button type="button" class="btn ghost" id="a-test">Send test score</button></div>
         <div class="row end"><button class="btn" type="submit">Save</button></div>
       </form>
+      <form class="card" id="s-analysis" style="margin-top:1rem">
+        <h2>Verbatim analysis</h2>
+        <p class="muted" id="an-status">Sentiment on every free-text answer (Amazon Comprehend) and daily themes with example quotes (Amazon Bedrock). Emails, phone, card and account numbers are removed before any text is sent. Enabled with the stack's VerbatimAnalysis parameter.</p>
+        <label><input type="checkbox" id="an-sentiment" checked> Score the sentiment of comments as they arrive</label>
+        <div class="row end"><button class="btn" type="submit">Save</button></div>
+      </form>
       <form class="card" id="s-brand" style="margin-top:1rem">
         <h2>Brand</h2>
         <p class="muted">Shown on the web survey and in emails. Leave the name empty to show "SurveyCX".</p>
@@ -254,15 +260,17 @@
     $('a-url').value = a.ingestUrl || ''; $('a-key').value = a.key || '';
     $('b-name').value = b.name || ''; $('b-accent').value = b.accent || '#0f766e'; $('b-logo').value = b.logoUrl || '';
     renderHooks(settings.webhooks || []);
+    $('an-sentiment').checked = settings.analysis.sentiment !== false; if (!settings.analysis.available) $('an-status').textContent += ' This stack was deployed with it disabled; redeploy with VerbatimAnalysis=enabled to turn it on.';
     applyBrand(b);
     await loadKeys();
-    $('settings-nav').innerHTML = ['s-closed:Closed loop', 's-delivery:Invitations', 's-arena:Arena', 's-brand:Brand', 's-hooks:Webhooks', 's-keys:Other platforms and BI', 's-privacy:Privacy requests'].map((x) => { const [id, label] = x.split(':'); return `<a href="#${id}" style="display:block;padding:.4rem .2rem;border-top:1px solid var(--line);text-decoration:none;color:var(--ink)">${label}</a>`; }).join('');
+    $('settings-nav').innerHTML = ['s-closed:Closed loop', 's-delivery:Invitations', 's-arena:Arena', 's-brand:Brand', 's-analysis:Verbatim analysis', 's-hooks:Webhooks', 's-keys:Other platforms and BI', 's-privacy:Privacy requests'].map((x) => { const [id, label] = x.split(':'); return `<a href="#${id}" style="display:block;padding:.4rem .2rem;border-top:1px solid var(--line);text-decoration:none;color:var(--ink)">${label}</a>`; }).join('');
   }
   const save = async (patch, msg) => { try { settings = (await api('PUT', '/settings', patch)).settings; toast(msg || 'Saved'); applyBrand(settings.brand); } catch (err) { toast(err.message, true); } };
   $('s-closed').onsubmit = (e) => { e.preventDefault(); save({ closedLoop: { enabled: $('cl-enabled').checked, taskFlowId: $('cl-flow').value.trim(), attribute: $('cl-attr').value.trim() || 'csat' }, connectInstanceId: $('cl-instance').value.trim() }); };
   $('s-delivery').onsubmit = (e) => { e.preventDefault(); save({ delivery: { frequencyDays: +$('d-freq').value, quietStart: +$('d-qs').value, quietEnd: +$('d-qe').value, reminderHours: +$('d-rem').value, smsOrigination: $('d-sms-from').value.trim(), emailFrom: $('d-email-from').value.trim(), smsText: $('d-sms-text').value, emailSubject: $('d-email-subject').value, emailText: $('d-email-text').value } }); };
   $('s-arena').onsubmit = (e) => { e.preventDefault(); save({ arena: { ingestUrl: $('a-url').value.trim(), key: $('a-key').value.trim() } }); };
   $('a-test').onclick = async () => { try { await api('POST', '/settings/arena/test', { agent: $('a-test-agent').value.trim() }); toast('Arena accepted a test score of 5'); } catch (err) { toast(err.message, true); } };
+  $('s-analysis').onsubmit = (e) => { e.preventDefault(); save({ analysis: { sentiment: $('an-sentiment').checked } }); };
   $('s-brand').onsubmit = (e) => { e.preventDefault(); save({ brand: { name: $('b-name').value.trim(), accent: $('b-accent').value, logoUrl: $('b-logo').value.trim() } }); };
   function renderHooks(list) {
     $('hook-list').innerHTML = list.map((w, i) => `<div class="q"><div class="grid" style="grid-template-columns:2fr 1fr 1fr auto;align-items:end"><div><label>URL (https)<input type="url" class="h-url" value="${esc(w.url || '')}" placeholder="https://your-app.example/surveycx"></label></div><div><label>Secret<input type="text" class="h-secret" autocomplete="off" value="${esc(w.secret || '')}"></label></div><div><label>Send<select class="h-events"><option value="completed" ${(w.events || ['completed']).includes('completed') ? 'selected' : ''}>All responses</option><option value="low" ${!(w.events || ['completed']).includes('completed') ? 'selected' : ''}>Low scores only</option></select></label></div><button type="button" class="btn danger small h-rm" data-i="${i}">Remove</button></div></div>`).join('') || '<p class="muted">No webhooks.</p>';

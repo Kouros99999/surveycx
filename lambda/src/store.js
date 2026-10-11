@@ -10,7 +10,8 @@
  *   pk=OUTBOX            sk=<dueAt>#<contactId>    queued SMS/email sends (quiet hours, reminders)
  *   pk=KEY#<key>         sk=META                   ingest and data keys for other platforms and BI tools
  *   pk=AGENT#<arn>       sk=LIVE                   agent name and queue as last seen, for lists and reports
- *   pk=METER             sk=<day> | TRIAL          Marketplace usage reports
+ *   pk=METER             sk=<day> | TRIAL          Marketplace usage reports (and THEMES#<day> markers)
+ *   pk=THEMES            sk=<surveyId|*>#<day>    daily verbatim themes for the trailing window
  */
 'use strict';
 const clock = require('./clock.js');
@@ -121,9 +122,14 @@ async function listAgents() { const r = await db().send(new cmds.ScanCommand({ T
 
 // ---------- metering ----------
 async function getMeter(day) { return get('METER', day); }
+
+// ---------- verbatim themes ----------
+async function putThemes(surveyId, day, data) { await put(Object.assign({ pk: 'THEMES', sk: `${surveyId}#${day}`, ttl: ttlAt(Date.now(), RETENTION_DAYS) }, data)); }
+/** The newest themes for a survey (or '*' for all) on or before a day. */
+async function getThemes(surveyId, day) { const r = await db().send(new cmds.QueryCommand({ TableName: TABLE, KeyConditionExpression: 'pk = :p AND sk BETWEEN :a AND :b', ExpressionAttributeValues: { ':p': 'THEMES', ':a': `${surveyId}#0000-00-00`, ':b': `${surveyId}#${day}` }, ScanIndexForward: false, Limit: 1 })); return strip((r.Items || [])[0]); }
 async function putMeter(day, data) { await put(Object.assign({ pk: 'METER', sk: day }, data)); }
 
 module.exports = { TABLE, RETENTION_DAYS, responseItem, customerHash, strip,
   listSurveys, getSurvey, putSurvey, deleteSurvey, getSettings, putSettings,
   getResponse, putResponse, responsesBetween, deleteResponse, responsesForCustomer, putToken, getToken,
-  getCustomer, touchCustomer, enqueue, dueSends, deleteSend, listKeys, getKey, putKey, deleteKey, touchAgent, listAgents, getMeter, putMeter };
+  getCustomer, touchCustomer, enqueue, dueSends, deleteSend, listKeys, getKey, putKey, deleteKey, touchAgent, listAgents, getMeter, putMeter, putThemes, getThemes };

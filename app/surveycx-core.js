@@ -216,7 +216,7 @@
    */
   function aggregate(rows, surveys) {
     const byId = Object.fromEntries((surveys || []).map((s) => [s.id, s]));
-    const group = () => ({ n: 0, offered: 0, started: 0, ratings: [], nps: [], ces: [], fives: [], low: 0 });
+    const group = () => ({ n: 0, offered: 0, started: 0, ratings: [], nps: [], ces: [], fives: [], low: 0, comments: 0, positive: 0, negative: 0 });
     const overall = group(), agents = {}, queues = {}, days = {}, drivers = {}, channels = {}, tenants = {};
     const add = (g, r) => {
       g.offered++;
@@ -229,6 +229,7 @@
       if (sc.ces != null) g.ces.push(sc.ces);
       if (sc.five != null) g.fives.push(sc.five);
       if (sc.low) g.low++;
+      if (r.sentiment) { g.comments++; if (r.sentiment.label === 'positive') g.positive++; if (r.sentiment.label === 'negative') g.negative++; }
     };
     for (const r of rows) {
       add(overall, r);
@@ -261,12 +262,12 @@
     const byId = Object.fromEntries((surveys || []).map((s) => [s.id, s]));
     const qcols = [];
     for (const s of surveys || []) for (const q of s.questions) if (!qcols.some((c) => c.id === q.id)) qcols.push({ id: q.id, label: `${s.name}: ${q.text}` });
-    const head = ['contactId', 'tenant', 'survey', 'channel', 'queue', 'agent', 'agentArn', 'status', 'startedAt', 'completedAt', 'csat', 'nps', 'ces', 'five', 'low', ...qcols.map((c) => c.label)];
+    const head = ['contactId', 'tenant', 'survey', 'channel', 'queue', 'agent', 'agentArn', 'status', 'startedAt', 'completedAt', 'csat', 'nps', 'ces', 'five', 'low', 'sentiment', ...qcols.map((c) => c.label)];
     const esc = (v) => { const s = v == null ? '' : String(v); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
     const lines = [head.map(esc).join(',')];
     for (const r of rows) {
       const s = byId[r.surveyId], sc = r.scores || {};
-      lines.push([r.contactId, r.tenant, s ? s.name : r.surveyId, r.channel, r.queue, r.agentName, r.agentArn, r.status, r.startedAt, r.completedAt, sc.csat, sc.nps, sc.ces, sc.five, sc.low ? 'yes' : '', ...qcols.map((c) => (r.answers || {})[c.id])].map(esc).join(','));
+      lines.push([r.contactId, r.tenant, s ? s.name : r.surveyId, r.channel, r.queue, r.agentName, r.agentArn, r.status, r.startedAt, r.completedAt, sc.csat, sc.nps, sc.ces, sc.five, sc.low ? 'yes' : '', r.sentiment ? r.sentiment.label : '', ...qcols.map((c) => (r.answers || {})[c.id])].map(esc).join(','));
     }
     return lines.join('\n') + '\n';
   }

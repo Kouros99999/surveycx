@@ -9,6 +9,7 @@
 'use strict';
 const S = require('./surveycx-core.js');
 const crypto = require('crypto');
+const verbatim = require('./verbatim.js');
 
 const newToken = () => 't_' + crypto.randomBytes(18).toString('base64url');
 
@@ -45,10 +46,15 @@ async function complete(store, row, survey, nowIso, deps) {
   if (row.status === 'completed') return row;
   row.status = 'completed'; row.completedAt = nowIso;
   row.scores = S.scoreResponse(survey, row.answers);
+  // Sentiment of what the customer wrote (redacted before it leaves the table). Off when the stack has no analysis or the settings say so.
+  const settingsEarly = await store.getSettings();
+  if (process.env.VERBATIM_ANALYSIS === 'enabled' && !(settingsEarly.analysis && settingsEarly.analysis.sentiment === false)) {
+    const texts = survey.questions.filter((q) => q.type === 'text' && typeof row.answers[q.id] === 'string' && row.answers[q.id].trim()).map((q) => row.answers[q.id]);
+    if (texts.length) { const sent = await verbatim.sentimentOf((deps && deps.clients && deps.clients.comprehend) ? deps.clients : verbatim.safeClients(), texts.join('\n'), survey.language); if (sent) row.sentiment = sent; }
+  }
   await store.putResponse(row);
   if (row.customerHash) await store.touchCustomer(row.customerHash, { lastCompletedAt: nowIso });
-  const settings = await store.getSettings();
-  await closeLoop(row, survey, settings, deps || {});
+  await closeLoop(row, survey, settingsEarly, deps || {});
   return row;
 }
 
@@ -85,7 +91,7 @@ async function closeLoop(row, survey, settings, deps) {
   }
   // 3. An event per response for anything else the customer wants to wire up (Slack, CRM, warehouse).
   if (c && c.events) {
-    try { await c.events.send(new c.PutEventsCommand({ Entries: [{ Source: 'surveycx', DetailType: sc.low ? 'Survey Completed - Low Score' : 'Survey Completed', Detail: JSON.stringify({ contactId: row.contactId, tenant: row.tenant, surveyId: survey.id, surveyName: survey.name, channel: row.channel, queue: row.queue, agent: row.agentArn, agentName: row.agentName, scores: sc, answers: row.answers, completedAt: row.completedAt }) }] })); }
+    try { await c.events.send(new c.PutEventsCommand({ Entries: [{ Source: 'surveycx', DetailType: sc.low ? 'Survey Completed - Low Score' : 'Survey Completed', Detail: JSON.stringify({ contactId: row.contactId, tenant: row.tenant, surveyId: survey.id, surveyName: survey.name, channel: row.channel, queue: row.queue, agent: row.agentArn, agentName: row.agentName, scores: sc, sentiment: row.sentiment, answers: row.answers, completedAt: row.completedAt }) }] })); }
     catch (e) { log('event', e); }
   }
   // 4. Webhooks for other apps: the whole response, signed so the receiver can verify it came from this stack.
@@ -93,7 +99,7 @@ async function closeLoop(row, survey, settings, deps) {
     const wants = w.events || ['completed'];
     if (!w.url || !(wants.includes('completed') || (sc.low && wants.includes('low')))) continue;   // 'low' alone means only low scores
     try {
-      const body = { event: sc.low ? 'survey.completed.low' : 'survey.completed', contactId: row.contactId, tenant: row.tenant, surveyId: survey.id, surveyName: survey.name, platform: row.platform, channel: row.channel, queue: row.queue, agent: row.agentArn, agentName: row.agentArn ? row.agentName : undefined, scores: sc, answers: row.answers, startedAt: row.startedAt, completedAt: row.completedAt };
+      const body = { event: sc.low ? 'survey.completed.low' : 'survey.completed', contactId: row.contactId, tenant: row.tenant, surveyId: survey.id, surveyName: survey.name, platform: row.platform, channel: row.channel, queue: row.queue, agent: row.agentArn, agentName: row.agentArn ? row.agentName : undefined, scores: sc, sentiment: row.sentiment, answers: row.answers, startedAt: row.startedAt, completedAt: row.completedAt };
       await (deps.post || exports.post)(w.url, body, w.secret ? { 'x-surveycx-signature': 'sha256=' + crypto.createHmac('sha256', w.secret).update(JSON.stringify(body)).digest('hex') } : {});
     } catch (e) { log('webhook', e); }
   }

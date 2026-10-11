@@ -31,12 +31,14 @@
             if (survey === def) { row.answers.resolved = good ? 1 : rnd() < 0.4 ? 1 : 0; row.answers.effort = good ? 5 + Math.floor(rnd() * 3) : 1 + Math.floor(rnd() * 4); row.answers.nps = good ? 7 + Math.floor(rnd() * 4) : Math.floor(rnd() * 7); if (csat <= 3 && channel !== 'voice') row.answers.why = pick(COMMENTS); }
             else { row.answers.reason = 1 + Math.floor(rnd() * 4); row.answers.nps = good ? 8 + Math.floor(rnd() * 3) : Math.floor(rnd() * 7); }
             row.completedAt = new Date(Date.parse(at) + 120000).toISOString(); row.scores = S.scoreResponse(survey, row.answers);
+            if (row.answers.why) row.sentiment = { label: /thank|great|friendly|clear/i.test(row.answers.why) ? 'positive' : 'negative', positive: 0.1, negative: 0.8, neutral: 0.1, mixed: 0 };
           }
         }
         await store.putResponse(row);
         await store.touchAgent(row.agentArn, name, queue, at);
       }
     }
+    if (store.putThemes) await store.putThemes('*', new Date(now).toISOString().slice(0, 10), { comments: 38, from: new Date(now - 30 * 86400000).toISOString().slice(0, 10), to: new Date(now).toISOString().slice(0, 10), themes: [{ name: 'Long wait before answer', sentiment: 'negative', count: 14, examples: ['Waited far too long before anyone picked up.'] }, { name: 'Issue not resolved', sentiment: 'negative', count: 9, examples: ['Still not resolved.', 'The agent was polite but could not fix the billing error.'] }, { name: 'Repeating account details', sentiment: 'negative', count: 6, examples: ['Had to repeat my account number three times.'] }, { name: 'Friendly, fast help', sentiment: 'positive', count: 9, examples: ['Great help, clear explanation.', 'Very friendly and fast.'] }] });
     await store.putResponse({ contactId: 'demo', surveyId: 'default', channel: 'sms', status: 'offered', startedAt: new Date(now).toISOString(), answers: {}, agentArn: 'arn:aws:connect:us-east-1:111122223333:instance/i/agent/ann', agentName: 'Ann Lee', queue: 'Billing', token: 'demo' });
     await store.putToken('demo', 'demo', now + 86400000 * 14);
   }

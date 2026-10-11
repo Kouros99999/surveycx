@@ -34,6 +34,7 @@
     <div class="card"><h2>Score by day <span class="muted" style="font-weight:400;font-size:.85rem">average on a 1-5 scale; red = at or below the low threshold</span></h2><div class="chart" id="chart" role="img" aria-label="Average score by day"></div><table class="sr" id="chart-table"></table></div>
     <div class="card"><h2>Completion</h2><div id="funnel"></div></div>
   </div>
+  <div class="card" id="themes-card" hidden style="margin-top:1rem"><h2>What customers say <span class="muted" style="font-weight:400;font-size:.85rem" id="themes-meta"></span></h2><div id="themes"></div></div>
   <div class="grid two" style="grid-template-columns:1fr 1fr;margin-top:1rem">
     <div class="card scroll"><h2>By agent</h2><table id="t-agents"></table></div>
     <div class="card scroll"><h2>By queue</h2><table id="t-queues"></table></div>
@@ -89,14 +90,23 @@
       table($('t-agents'), rep.agents, [{ h: 'Agent', f: (r) => esc(r.name) }, ...G]);
       table($('t-queues'), rep.queues, [{ h: 'Queue', f: (r) => esc(r.id) }, ...G]);
       table($('t-drivers'), rep.drivers, [{ h: 'Driver', f: (r) => esc(r.id) + (r.type === 'choice' ? '<div class="muted">' + Object.entries(r.choices).map(([k, v]) => esc(k) + ' ' + v).join(', ') + '</div>' : '') }, { h: 'Answers', num: true, f: (r) => r.n }, { h: 'Avg (1-5)', num: true, f: (r) => fmt.n1(r.five) }, { h: 'NPS', num: true, f: (r) => fmt.int(r.nps) }, { h: 'CES', num: true, f: (r) => fmt.n1(r.ces) }]);
+      renderThemes(rep.themes, o);
       $('t-tenants-card').hidden = !(rep.tenants || []).length; table($('t-tenants'), rep.tenants || [], [{ h: 'Tenant', f: (r) => esc(r.id) }, { h: 'Offered', num: true, f: (r) => r.offered }, { h: 'Completion', num: true, f: (r) => fmt.pct(r.completion) }, ...G]);
       table($('t-channels'), rep.channels, [{ h: 'Channel', f: (r) => esc(r.id) }, { h: 'Offered', num: true, f: (r) => r.offered }, { h: 'Completion', num: true, f: (r) => fmt.pct(r.completion) }, ...G]);
       $('resp-count').textContent = `${resp.responses.length} shown, newest first`;
-      table($('t-responses'), resp.responses, [{ h: 'When', f: (r) => fmt.when(r.completedAt || r.startedAt) }, { h: 'Agent', f: (r) => esc(r.agentName || '') }, { h: 'Queue', f: (r) => esc(r.queue || '') }, { h: 'Channel', f: (r) => esc(r.channel) }, { h: 'Status', f: (r) => r.status === 'completed' ? (r.scores && r.scores.low ? '<span class="pill low">low</span>' : '<span class="pill">done</span>') : `<span class="pill paused">${r.status}</span>` }, { h: 'Score', num: true, f: (r) => fmt.n1(r.scores && r.scores.five) }, { h: 'Comment', f: (r) => esc(comment(r)) }, { h: '', f: (r) => `<button type="button" class="btn ghost small" data-c="${esc(r.contactId)}">Open</button>` }]);
+      table($('t-responses'), resp.responses, [{ h: 'When', f: (r) => fmt.when(r.completedAt || r.startedAt) }, { h: 'Agent', f: (r) => esc(r.agentName || '') }, { h: 'Queue', f: (r) => esc(r.queue || '') }, { h: 'Channel', f: (r) => esc(r.channel) }, { h: 'Status', f: (r) => r.status === 'completed' ? (r.scores && r.scores.low ? '<span class="pill low">low</span>' : '<span class="pill">done</span>') : `<span class="pill paused">${r.status}</span>` }, { h: 'Score', num: true, f: (r) => fmt.n1(r.scores && r.scores.five) }, { h: 'Comment', f: (r) => (r.sentiment ? `<span class="pill ${r.sentiment.label === 'negative' ? 'low' : r.sentiment.label === 'positive' ? '' : 'paused'}">${esc(r.sentiment.label)}</span> ` : '') + esc(comment(r)) }, { h: '', f: (r) => `<button type="button" class="btn ghost small" data-c="${esc(r.contactId)}">Open</button>` }]);
       $('t-responses').querySelectorAll('button[data-c]').forEach((b) => { b.onclick = () => open(b.dataset.c); });
       if (location.hash.startsWith('#contact=')) { open(decodeURIComponent(location.hash.slice(9))); history.replaceState(null, '', location.pathname); }
     } catch (err) { toast(err.message, true); }
   }
+  function renderThemes(t, o) {
+    const card = $('themes-card');
+    if (!t || !t.themes || !t.themes.length) { card.hidden = !(o.comments); if (o.comments) { card.hidden = false; $('themes-meta').textContent = ''; $('themes').innerHTML = sentimentBar(o) + '<p class="muted">Themes appear after the first nightly analysis.</p>'; } return; }
+    card.hidden = false; $('themes-meta').textContent = `${t.comments} comments, ${t.from} to ${t.to}`;
+    const max = Math.max(1, ...t.themes.map((x) => x.count));
+    $('themes').innerHTML = sentimentBar(o) + t.themes.map((x) => `<div style="margin:.6rem 0"><div class="row" style="justify-content:space-between"><span><b>${esc(x.name)}</b> <span class="pill ${x.sentiment === 'negative' ? 'low' : x.sentiment === 'positive' ? '' : 'paused'}">${esc(x.sentiment)}</span></span><b>${x.count}</b></div><div class="bar"><i style="width:${(x.count / max) * 100}%;background:${x.sentiment === 'negative' ? 'var(--bad)' : x.sentiment === 'positive' ? 'var(--good)' : 'var(--warn)'}"></i></div>${x.examples.length ? `<p class="muted" style="margin:.3rem 0 0;font-size:.88rem">${x.examples.map((e) => '“' + esc(e) + '”').join(' · ')}</p>` : ''}</div>`).join('');
+  }
+  function sentimentBar(o) { if (!o.comments) return ''; const p = Math.round((o.positive / o.comments) * 100), n = Math.round((o.negative / o.comments) * 100); return `<p class="muted" style="margin:0 0 .4rem">${o.comments} comments analysed: ${p}% positive, ${n}% negative</p><div class="bar" style="display:flex"><i style="width:${p}%;background:var(--good)"></i><i style="width:${100 - p - n}%;background:var(--line)"></i><i style="width:${n}%;background:var(--bad)"></i></div>`; }
   function previous(from, to) { const n = Math.round((Date.parse(to) - Date.parse(from)) / 86400000) + 1; return { to: day(new Date(Date.parse(from) - 86400000)), from: day(new Date(Date.parse(from) - n * 86400000)) }; }
   function comment(r) { const s = surveys.find((x) => x.id === r.surveyId); const text = Object.entries(r.answers || {}).find(([k, v]) => typeof v === 'string' && v); return text ? text[1].slice(0, 80) : ''; }
   async function open(contactId) {

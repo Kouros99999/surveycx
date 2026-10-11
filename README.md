@@ -20,6 +20,7 @@ Post-contact surveys for Amazon Connect, and a survey module for other contact-c
 | `lambda/src/responses.js` | Response lifecycle and the closed loop: contact attributes, low-score Task, EventBridge event, Arena |
 | `lambda/src/optout.js` | STOP replies from AWS End User Messaging |
 | `lambda/src/api.js` | HTTP API: surveys, settings, report, responses, export, privacy, keys, web survey, ingest and data endpoints |
+| `lambda/src/verbatim.js`, `lambda/src/themes.js` | Redaction, Comprehend sentiment per comment, daily Bedrock theme extraction |
 | `lambda/src/metering.js` | Daily Marketplace usage report (`responses` dimension) with the free trial |
 | `lambda/src/contacts.js` | The canonical "contact ended" shape every connector produces |
 | `lambda/src/store.js` | Single-table DynamoDB layer (`memstore.js` is the in-memory twin for tests and dev) |
@@ -43,7 +44,7 @@ Console http://localhost:8766/console.html, results http://localhost:8766/result
 ## Test
 
 ```bash
-node lambda/build.js && node --test app/surveycx-core.test.js app/surveycx-auth.test.js lambda/src/store.test.js lambda/src/flow.test.js lambda/src/delivery.test.js lambda/src/api.test.js lambda/src/metering.test.js lambda/src/clock.test.js lambda/src/site-deployer.test.js lambda/seller/register.test.js lambda/flow-module.test.js web/releases.test.js
+node lambda/build.js && node --test app/surveycx-core.test.js app/surveycx-auth.test.js lambda/src/store.test.js lambda/src/flow.test.js lambda/src/delivery.test.js lambda/src/api.test.js lambda/src/metering.test.js lambda/src/clock.test.js lambda/src/site-deployer.test.js lambda/src/verbatim.test.js lambda/seller/register.test.js lambda/flow-module.test.js web/releases.test.js
 ```
 
 ## Deploy into an AWS account

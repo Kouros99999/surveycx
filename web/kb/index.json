@@ -5,6 +5,7 @@
   { "slug": "sms-and-email", "title": "SMS and email invitations", "summary": "Setting up sending, the frequency cap, the send window, reminders and opt-outs.", "updated": "0.1.0" },
   { "slug": "closed-loop", "title": "Closed loop: Tasks, attributes and events", "summary": "What happens after a low score, and how to route the follow-up.", "updated": "0.1.0" },
   { "slug": "results", "title": "Reading the results", "summary": "Scores by agent, queue, driver and period; the funnel; exports; what agents see.", "updated": "0.1.0" },
+  { "slug": "verbatim-analysis", "title": "Verbatim analysis: sentiment and themes", "summary": "Sentiment on every comment and daily themes with example quotes, with redaction before any text leaves the table.", "updated": "0.1.0" },
   { "slug": "arena", "title": "Feeding Arena", "summary": "Sending survey scores to Arena for Amazon Connect.", "updated": "0.1.0" },
   { "slug": "api-reference", "title": "API reference", "summary": "Ingest and data keys, survey links for your own channels, survey definitions, reports and signed webhooks for other applications.", "updated": "0.1.0" },
   { "slug": "partners", "title": "Partners: one stack per client", "summary": "Tenant keys versus a stack per client, the one-command provisioner, and billing per client.", "updated": "0.1.0" },

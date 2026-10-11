@@ -22,6 +22,10 @@ Each table shows responses, CSAT %, CSAT average, NPS, effort and the count of l
 
 Only agent-attributable questions go into the agent table; a company question such as *would you recommend us* is in the driver table but does not move an agent's score.
 
+## What customers say
+
+With verbatim analysis enabled, a card shows the share of positive and negative comments and the themes of the last 30 days with example quotes; see [Verbatim analysis](kb.html?a=verbatim-analysis).
+
 ## Responses
 
 Every response in the period, newest first, with status (done, low, offered, started), the overall score and the first comment. **Open** shows the full response: every question and answer, the scores, the contact id and a link to the contact in Amazon Connect. Supervisors can delete a response from here. The link `results.html#contact=<id>` opens a response directly; low-score Tasks carry it.

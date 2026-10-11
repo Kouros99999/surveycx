@@ -5,7 +5,7 @@
  *   GET/POST /surveys, GET/PUT/DELETE /surveys/{id}        the survey builder (supervisors)
  *   GET/PUT /settings                                     closed loop, delivery, Arena feed, brand; secrets come back masked (supervisors)
  *   POST /settings/arena/test                             sends a test CSAT_RECEIVED to Arena (supervisors)
- *   GET /report?from&to[&surveyId][&agent][&queue]        aggregate by agent, queue, driver, day, channel (agents: own rows only)
+ *   GET /report?from&to[&surveyId][&agent][&queue]        aggregate by agent, queue, driver, day, channel, plus the newest verbatim themes (agents: own rows only, no themes)
  *   GET /responses?from&to[&surveyId][&agent][&queue][&low=1]  the rows behind the report (agents: own rows only)
  *   GET /responses/{contactId}, DELETE /responses/{contactId}   one response; delete removes it (supervisors)
  *   GET /export.csv?from&to                               CSV download (supervisors)
@@ -84,12 +84,13 @@ function publicSettings(s) {
   if (out.arena.key) out.arena.key = '••••' + String(out.arena.key).slice(-4);
   out.webhooks = (out.webhooks || []).map((w) => Object.assign({}, w, { secret: w.secret ? '••••' + String(w.secret).slice(-4) : '' }));
   out.brand = Object.assign({ name: '', accent: '#0f766e', logoUrl: '' }, out.brand || {});
+  out.analysis = Object.assign({ sentiment: true, available: process.env.VERBATIM_ANALYSIS === 'enabled' }, out.analysis || {});
   return out;
 }
 /** Merge a settings update, keeping a secret when the client sent back the masked value. */
 function mergeSettings(cur, body) {
   const out = JSON.parse(JSON.stringify(cur || {}));
-  for (const section of ['delivery', 'closedLoop', 'arena', 'brand']) if (body[section] && typeof body[section] === 'object') out[section] = Object.assign({}, out[section] || {}, body[section]);
+  for (const section of ['delivery', 'closedLoop', 'arena', 'brand', 'analysis']) if (body[section] && typeof body[section] === 'object') out[section] = Object.assign({}, out[section] || {}, body[section]);
   // Webhooks: up to 5 { url, secret, events: ['completed','low'] }; a masked secret sent back keeps the stored one. HTTPS only.
   if (Array.isArray(body.webhooks)) out.webhooks = body.webhooks.slice(0, 5).map((w, i) => { const prev = ((cur && cur.webhooks) || [])[i] || {}; const url = String((w && w.url) || '').trim().slice(0, 500); let secret = String((w && w.secret) || '').trim().slice(0, 200); if (secret.startsWith('••••')) secret = prev.secret || ''; const events = Array.isArray(w && w.events) ? w.events.filter((e) => e === 'completed' || e === 'low') : []; return { url, secret, events: events.length ? events : ['completed'], label: String((w && w.label) || '').slice(0, 60) }; }).filter((w) => /^https:\/\//.test(w.url));
   if (body.connectInstanceId !== undefined) out.connectInstanceId = String(body.connectInstanceId || '').trim().slice(0, 100);
@@ -158,7 +159,7 @@ function makeHandler(deps) {
           const { from, to } = rangeOf(qs);
           const rows = filterRows(await s.responsesBetween(from, to), qs, claims);
           const surveys = await s.listSurveys();
-          if (r.name === 'report') return json(200, Object.assign({ from, to, surveys: surveys.map((x) => ({ id: x.id, name: x.name, status: x.status })) }, S.aggregate(rows, surveys)));
+          if (r.name === 'report') return json(200, Object.assign({ from, to, surveys: surveys.map((x) => ({ id: x.id, name: x.name, status: x.status })), themes: sup ? await s.getThemes(qs.surveyId || '*', to) : undefined }, S.aggregate(rows, surveys)));
           if (r.name === 'listResponses') return json(200, { from, to, responses: rows.slice(-1000).reverse().map((x) => forViewer(x, claims)) });
           return { statusCode: 200, headers: { 'content-type': 'text/csv; charset=utf-8', 'content-disposition': `attachment; filename="surveycx-${from}-${to}.csv"`, 'access-control-allow-origin': ORIGIN, 'cache-control': 'no-store' }, body: S.toCsv(rows, surveys) };
         }
@@ -279,7 +280,7 @@ function makeHandler(deps) {
           const { from, to } = rangeOf(qs), tenant = dk.tenant || qs.tenant;
           const surveys = await s.listSurveys();
           const rows = (await s.responsesBetween(from, to)).filter((x) => (!qs.surveyId || x.surveyId === qs.surveyId) && (!qs.queue || x.queue === qs.queue) && (!qs.agent || x.agentArn === qs.agent) && (!tenant || x.tenant === tenant));
-          return json(200, Object.assign({ from, to, tenant, version: VERSION, surveys: surveys.map((x) => ({ id: x.id, name: x.name, status: x.status })) }, S.aggregate(rows, surveys)));
+          return json(200, Object.assign({ from, to, tenant, version: VERSION, surveys: surveys.map((x) => ({ id: x.id, name: x.name, status: x.status })), themes: tenant ? undefined : await s.getThemes(qs.surveyId || '*', to) }, S.aggregate(rows, surveys)));
         }
         case 'dataResponses': {
           const dk = await keyOf(r.key, 'data'); if (!dk) return json(401, { error: 'data key is invalid or expired' });
