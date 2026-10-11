@@ -70,6 +70,10 @@ Each response is stored, scored and closed-loop processed like SurveyCX's own (T
 
 With a secret, the header `X-SurveyCX-Signature: sha256=<hex>` is the HMAC-SHA256 of the raw body; verify it before trusting the payload. A webhook that fails is logged and not retried; the same data is also on EventBridge (`source: surveycx`) inside the AWS account for anything that lives there.
 
+## Staying current
+
+`GET {api}/health` returns the stack's `version`. Release notes are at https://surveycx.ai/releases.html and as an Atom feed at https://surveycx.ai/releases.xml; subscribe a Slack channel, a ticket queue or a mailbox to it. The API is additive within a major version: fields and routes are added, never renamed or removed, so an integration written against 0.1 keeps working on later 0.x stacks. Anything that would break a caller gets a new major version and a notice in the release notes one release ahead. A stack is upgraded by redeploying it with the newer release template (`provision.js --version x.y.z` for partner stacks).
+
 ## Identity in a multi-vendor setup
 
 The `agent` you send is stored as-is and is what reports and Arena use, so send a stable id (a user id, not a display name). If the same person appears under two ids, Arena's linked ids merge them on its side; SurveyCX reports them separately.

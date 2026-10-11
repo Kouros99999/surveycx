@@ -124,6 +124,7 @@ Globals:
         # The site installer writes it into the settings row; functions read settings.siteUrl.
         PROVIDER: !Ref Provider
         PARTNER: !Ref Partner
+        SURVEYCX_VERSION: 0.0.0-dev   # replaced by the release build
 
 Resources:
   ContactRecordStream:

@@ -60,6 +60,7 @@ let tpl = fs.readFileSync(path.join(__dirname, 'template.yaml'), 'utf8').replace
 const before = (tpl.match(/CodeUri: src\//g) || []).length;
 tpl = tpl.replace(/CodeUri: src\/[^\n]*/g, `CodeUri: ${codeUri}`);
 tpl = tpl.replace(/^Description: (.*)$/m, `Description: SurveyCX for Amazon Connect v${version}. $1`);
+tpl = tpl.replace('SURVEYCX_VERSION: 0.0.0-dev', `SURVEYCX_VERSION: ${version}`);
 if (bucket) tpl = tpl.replace(/(  SiteArchiveUrl:\n    Type: String\n    Default: )''/, `$1'https://${bucket}.s3.${region}.amazonaws.com/surveycx/${version}/site.zip'`);
 if (bucket && !tpl.includes('/site.zip')) { console.error('internal: SiteArchiveUrl default was not set; the template layout changed'); process.exit(1); }
 fs.writeFileSync(path.join(out, 'template.yaml'), tpl);

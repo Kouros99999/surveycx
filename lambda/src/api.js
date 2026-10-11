@@ -37,6 +37,7 @@ const delivery = require('./delivery.js');
 
 const ORIGIN = process.env.ALLOWED_ORIGIN || '*';
 const PLATFORM = process.env.PROVIDER || 'connect';
+const VERSION = process.env.SURVEYCX_VERSION || '0.0.0-dev';   // stamped by the release build; partners read it from /health and the data report
 const MAX_DAYS = 92;
 const json = (status, body, extra) => ({ statusCode: status, headers: Object.assign({ 'content-type': 'application/json', 'access-control-allow-origin': ORIGIN, 'cache-control': 'no-store' }, extra || {}), body: JSON.stringify(body) });
 
@@ -118,7 +119,7 @@ function makeHandler(deps) {
     const sup = isSupervisor(claims);
     try {
       switch (r.name) {
-        case 'health': return json(200, { ok: true, at: now().toISOString(), platform: PLATFORM });
+        case 'health': return json(200, { ok: true, at: now().toISOString(), platform: PLATFORM, version: VERSION, partner: process.env.PARTNER || undefined, releaseNotes: 'https://surveycx.ai/releases.html', feed: 'https://surveycx.ai/releases.xml' });
         case 'listSurveys': return json(200, { surveys: await s.listSurveys() });
         case 'getSurvey': { const x = await s.getSurvey(r.id); return x ? json(200, { survey: x }) : json(404, { error: 'not found' }); }
         case 'createSurvey': case 'putSurvey': {
@@ -278,7 +279,7 @@ function makeHandler(deps) {
           const { from, to } = rangeOf(qs), tenant = dk.tenant || qs.tenant;
           const surveys = await s.listSurveys();
           const rows = (await s.responsesBetween(from, to)).filter((x) => (!qs.surveyId || x.surveyId === qs.surveyId) && (!qs.queue || x.queue === qs.queue) && (!qs.agent || x.agentArn === qs.agent) && (!tenant || x.tenant === tenant));
-          return json(200, Object.assign({ from, to, tenant, surveys: surveys.map((x) => ({ id: x.id, name: x.name, status: x.status })) }, S.aggregate(rows, surveys)));
+          return json(200, Object.assign({ from, to, tenant, version: VERSION, surveys: surveys.map((x) => ({ id: x.id, name: x.name, status: x.status })) }, S.aggregate(rows, surveys)));
         }
         case 'dataResponses': {
           const dk = await keyOf(r.key, 'data'); if (!dk) return json(401, { error: 'data key is invalid or expired' });

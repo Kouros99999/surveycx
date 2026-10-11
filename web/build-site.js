@@ -143,6 +143,29 @@ ${footer('../')}
 }
 for (const f of ['support.html', 'privacy.html']) write(f, social(read(f), '/' + f));
 
+// ---------- releases.xml: an Atom feed partners and customers can subscribe to ----------
+{
+  const entries = releases.map((r) => `  <entry>
+    <title>SurveyCX ${esc(r.version)}: ${esc(r.title)}</title>
+    <link href="${ORIGIN}/releases.html#v${esc(r.version)}"/>
+    <id>${ORIGIN}/releases.html#v${esc(r.version)}</id>
+    <updated>${r.date}T12:00:00Z</updated>
+    <summary>${esc(r.summary)}</summary>
+    <content type="html">${esc(`<p>${esc(r.summary)}</p><ul>${r.changes.map((c) => `<li>${esc(c)}</li>`).join('')}</ul>${r.upgrade && r.upgrade.length ? `<h3>If you are upgrading</h3><ul>${r.upgrade.map((c) => `<li>${esc(c)}</li>`).join('')}</ul>` : ''}`)}</content>
+  </entry>`).join('\n');
+  write('releases.xml', `<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>SurveyCX release notes</title>
+  <link href="${ORIGIN}/releases.html"/>
+  <link rel="self" href="${ORIGIN}/releases.xml"/>
+  <id>${ORIGIN}/releases.xml</id>
+  <updated>${latest.date}T12:00:00Z</updated>
+  <author><name>EKPK LLC</name></author>
+${entries}
+</feed>
+`);
+}
+
 // ---------- sitemap and robots ----------
 const today = new Date().toISOString().slice(0, 10);
 const pages = [{ loc: '/', priority: '1.0', changefreq: 'weekly' }, { loc: '/kb.html', priority: '0.8', changefreq: 'weekly' }, { loc: '/releases.html', priority: '0.8', changefreq: 'weekly' }, { loc: '/support.html', priority: '0.5', changefreq: 'monthly' }, { loc: '/privacy.html', priority: '0.3', changefreq: 'yearly' }].concat(urls);
