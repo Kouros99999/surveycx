@@ -29,7 +29,7 @@ Free-text answers may contain whatever the customer typed. SurveyCX does not sen
 ## Access
 
 - Supervisors and agents sign in through Cognito (hosted UI, authorization code with PKCE, 12-character passwords). Supervisors build surveys, change settings and see everything; agents see only their own results. Federate your identity provider to the pool, or deploy with `AuthMode=external` and your OIDC issuer.
-- The web survey, the ingest endpoints and the data endpoint are reachable without sign-in; the token or key in the URL is the credential. Tokens and keys are random, keys are shown once and can be revoked, and ingest keys cannot read.
+- The web survey, the ingest endpoints and the data endpoint are reachable without sign-in; the token or key in the URL is the credential. Tokens and keys are random, keys are shown once and can be revoked, and ingest keys cannot read. These routes are rate-limited at the API gateway (20 requests a second for survey links and ingest, 2 for the data endpoint).
 - Every setting change and deletion is logged to CloudWatch with the user who made it.
 
 ## Encryption

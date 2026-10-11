@@ -15,7 +15,7 @@ Leave either empty to skip that channel.
 All of these are in *Settings > Invitations*:
 
 - **Frequency cap** (default 30 days): the same phone number or email is not invited again within this period, whatever the queue. Set 0 to disable.
-- **Send window** (default 8:00 to 21:00 in the stack's time zone): nothing is sent outside it; invitations wait for the next morning. The window is in your centre's time zone, not the customer's, so set it conservatively if you serve several time zones. Quiet-hour rules for texting are the law in many places.
+- **Send window** (default 8:00 to 21:00): nothing is sent outside it; invitations wait for the next morning. For SMS the window follows the **customer's** time zone when their number reveals it (North American area codes and single-zone countries); otherwise, and for email, it follows the stack's `Timezone`. Quiet-hour rules for texting are the law in many places, so keep the window inside 8:00 to 21:00.
 - **Reminder** (default none): one reminder after N hours if the survey is still unanswered, inside the send window. Never more than one.
 - **Sampling** is per survey, in the builder.
 - **Opt-out**: a STOP reply, the *I'd rather not receive surveys* link on the survey page, or a privacy deletion in the console stops all future invitations to that number or address.

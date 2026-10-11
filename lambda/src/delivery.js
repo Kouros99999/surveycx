@@ -8,7 +8,8 @@
  *
  * Settings (CONFIG/SETTINGS.delivery):
  *   frequencyDays   do not invite the same phone/email again within this many days (default 30)
- *   quietStart/End  local hours (stack time zone) outside which nothing is sent; sends are queued to the next window (default 8-21)
+ *   quietStart/End  hours outside which nothing is sent, in the customer's zone when their phone number reveals it, else the
+ *                   stack's zone; sends are queued to the next window (default 8-21)
  *   reminderHours   0 = no reminder; otherwise one reminder after this many hours if the survey is still unanswered
  *   smsText/emailSubject/emailText  templates; {link} is the survey link, {brand} the company name
  *   smsOrigination  phone number, sender id or pool ARN in AWS End User Messaging (also the SMS_ORIGINATION env)
@@ -18,17 +19,18 @@
 const S = require('./surveycx-core.js');
 const clock = require('./clock.js');
 const responses = require('./responses.js');
+const { zoneOf } = require('./phonezone.js');
 
 const DEFAULTS = { frequencyDays: 30, quietStart: 8, quietEnd: 21, reminderHours: 0, smsText: '{brand}: thanks for contacting us today. Could you answer 3 quick questions? {link} Reply STOP to opt out.', emailSubject: 'How did we do today?', emailText: 'Thank you for contacting {brand}. Please take a minute to tell us how we did: {link}\n\nIf you would rather not be surveyed, use the link at the bottom of the survey page.' };
 const settingsOf = (settings) => Object.assign({}, DEFAULTS, (settings && settings.delivery) || {});
 
-/** Pure: the next instant inside the send window, or `nowMs` itself when already inside it. */
-function nextSendTime(nowMs, quietStart, quietEnd) {
-  const h = clock.hourOf(nowMs);
+/** Pure: the next instant inside the send window, or `nowMs` itself when already inside it. `tz` is the customer's zone when known, else the stack's. */
+function nextSendTime(nowMs, quietStart, quietEnd, tz) {
+  const h = clock.hourOf(nowMs, tz);
   if (h >= quietStart && h < quietEnd) return nowMs;
-  const day = clock.dayKey(nowMs);
-  const todayStart = clock.startOfDay(day) + quietStart * 3600000;
-  return h < quietStart ? todayStart : clock.startOfDay(clock.addDays(day, 1)) + quietStart * 3600000;
+  const day = clock.dayKey(nowMs, tz);
+  const todayStart = clock.startOfDay(day, tz) + quietStart * 3600000;
+  return h < quietStart ? todayStart : clock.startOfDay(clock.addDays(day, 1), tz) + quietStart * 3600000;
 }
 
 /** Pure: which outbound channel a survey can use for this contact, if any. SMS first when both are possible. */
@@ -58,8 +60,10 @@ async function considerOutbound(store, contact, settings, surveys, nowMs) {
   if (cust && cust.lastInvitedAt && Date.parse(cust.lastInvitedAt) > nowMs - d.frequencyDays * 86400000) return { invited: false, reason: 'invited within ' + d.frequencyDays + ' days' };
   const nowIso = new Date(nowMs).toISOString();
   const row = await responses.offer(store, contact, real, channel, nowIso, { customerHash: hash });
-  const dueAt = new Date(nextSendTime(nowMs, d.quietStart, d.quietEnd)).toISOString();
-  await store.enqueue({ contactId: contact.contactId, channel, to: channel === 'sms' ? contact.phone : contact.email, dueAt, kind: 'invite', token: row.token, surveyId: real.id });
+  // The window follows the customer when their number says where they are (area code or country); otherwise the stack's zone.
+  const tz = channel === 'sms' ? zoneOf(contact.phone) || undefined : undefined;
+  const dueAt = new Date(nextSendTime(nowMs, d.quietStart, d.quietEnd, tz)).toISOString();
+  await store.enqueue({ contactId: contact.contactId, channel, to: channel === 'sms' ? contact.phone : contact.email, dueAt, kind: 'invite', token: row.token, surveyId: real.id, tz });
   await store.touchCustomer(hash, { lastInvitedAt: nowIso, channel });
   return { invited: true, channel, dueAt, reason: dueAt === nowIso ? 'queued' : 'queued for the send window' };
 }
@@ -92,7 +96,7 @@ async function sendDue(store, settings, clients, nowMs, siteUrl) {
       row.sentAt = row.sentAt || nowIso; row.sends = (row.sends || 0) + 1;
       await store.putResponse(row);
       await store.deleteSend(item.sk);
-      if (item.kind === 'invite' && d.reminderHours > 0) { await store.enqueue(Object.assign({}, item, { kind: 'reminder', dueAt: new Date(nextSendTime(nowMs + d.reminderHours * 3600000, d.quietStart, d.quietEnd)).toISOString() })); reminders++; }
+      if (item.kind === 'invite' && d.reminderHours > 0) { await store.enqueue(Object.assign({}, item, { kind: 'reminder', dueAt: new Date(nextSendTime(nowMs + d.reminderHours * 3600000, d.quietStart, d.quietEnd, item.tz)).toISOString() })); reminders++; }
     } catch (e) {
       console.error(JSON.stringify({ send: item.channel, contactId: item.contactId, error: e.name || e.message }));
       row.sendError = String(e.message || e).slice(0, 200); await store.putResponse(row);

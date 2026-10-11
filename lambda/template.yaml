@@ -321,6 +321,15 @@ Resources:
   Api:
     Type: AWS::Serverless::HttpApi
     Properties:
+      # Throttling: the public routes (survey links, ingest, data) get a tighter budget than the signed-in console.
+      DefaultRouteSettings: { ThrottlingBurstLimit: 200, ThrottlingRateLimit: 100 }
+      RouteSettings:
+        'GET /s/{token}': { ThrottlingBurstLimit: 50, ThrottlingRateLimit: 20 }
+        'POST /s/{token}/answers': { ThrottlingBurstLimit: 50, ThrottlingRateLimit: 20 }
+        'POST /s/{token}/optout': { ThrottlingBurstLimit: 20, ThrottlingRateLimit: 5 }
+        'POST /ingest/{key}/contacts': { ThrottlingBurstLimit: 50, ThrottlingRateLimit: 20 }
+        'POST /ingest/{key}/responses': { ThrottlingBurstLimit: 50, ThrottlingRateLimit: 20 }
+        'GET /data/{key}/responses': { ThrottlingBurstLimit: 10, ThrottlingRateLimit: 2 }
       CorsConfiguration:
         AllowOrigins: [!Ref AllowedOrigin]
         AllowMethods: [GET, PUT, POST, DELETE, OPTIONS]

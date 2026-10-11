@@ -16,7 +16,14 @@ The **Outputs** tab then shows `SiteUrl` (the console, results and the hosted su
 
 ## 2. Create a supervisor sign-in
 
-The stack creates a Cognito user pool (`UserPoolId` output). In the Cognito console create a user, add them to the **supervisors** group, and give them a temporary password. Agents who should see their own results go in the **agents** group with the `custom:agentArn` attribute set to their Connect agent ARN. See [Settings reference](kb.html?a=settings-reference) for using your own identity provider instead.
+The stack creates a Cognito user pool (`UserPoolId` output). In the Cognito console create a user, add them to the **supervisors** group, and give them a temporary password. Agents who should see their own results go in the **agents** group with the `custom:agentArn` attribute set to their Connect agent ARN. One command does all of it from your Connect directory:
+
+```
+node lambda/sync-users.js <stack name> --instance <connect instance id> --dry-run
+node lambda/sync-users.js <stack name> --instance <connect instance id>
+```
+
+Users whose Connect security profile is named supervisor, admin or manager land in the supervisors group; everyone else becomes an agent. New users get a temporary password by email. See [Settings reference](kb.html?a=settings-reference) for using your own identity provider instead.
 
 ## 3. Connect the survey to your flows
 

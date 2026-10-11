@@ -94,3 +94,17 @@ test('optout parses End User Messaging inbound SMS and marks STOP senders', asyn
   assert.equal(await s.getCustomer(s.customerHash('+15550100150')), null);
   assert.equal(optout.parseRecord(rec('stop')).stop, true); assert.equal(optout.parseRecord(rec('stopping by later')).stop, false);
 });
+
+test('quiet hours follow the customer\'s zone from their phone number; unknown numbers use the stack zone', async () => {
+  const { zoneOf } = require('./phonezone.js');
+  assert.equal(zoneOf('+12125551234'), 'America/New_York'); assert.equal(zoneOf('+1 (310) 555-1234'), 'America/Los_Angeles'); assert.equal(zoneOf('+447700900123'), 'Europe/London'); assert.equal(zoneOf('+61400000000'), null, 'multi-zone country'); assert.equal(zoneOf(''), null);
+  // 23:00 UTC is 16:00 in Los Angeles: inside the window, so a Californian is texted now; a Londoner waits until 08:00 London time.
+  assert.equal(d.nextSendTime(T('2026-10-11T23:00:00Z'), 8, 21, 'America/Los_Angeles'), T('2026-10-11T23:00:00Z'));
+  assert.equal(d.nextSendTime(T('2026-10-11T23:00:00Z'), 8, 21, 'Europe/London'), T('2026-10-12T07:00:00Z'));
+  const s = mem.make(); await s.putSurvey(survey({ target: { channels: ['sms'] } }));
+  const r = await d.considerOutbound(s, contacts.normalizeContact({ contactId: 'la', channel: 'voice', agent: 'arn:a', phone: '+13105551234' }), {}, await s.listSurveys(), T('2026-10-11T23:00:00Z'));
+  assert.equal(r.dueAt, '2026-10-11T23:00:00.000Z');
+  const uk = await d.considerOutbound(s, contacts.normalizeContact({ contactId: 'uk', channel: 'voice', agent: 'arn:a', phone: '+447700900123' }), {}, await s.listSurveys(), T('2026-10-11T23:00:00Z'));
+  assert.equal(uk.dueAt, '2026-10-12T07:00:00.000Z');
+  assert.equal((await s.dueSends('2026-10-12T08:00:00.000Z')).find((x) => x.contactId === 'uk').tz, 'Europe/London');
+});
