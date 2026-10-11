@@ -4,7 +4,8 @@
 //
 // Produces release/<version>/surveycx.zip (all Lambda code), release/<version>/template.yaml (every CodeUri
 // rewritten to the public S3 location), release/<version>/site.zip (the pages) and the release notes.
-// With --bucket it uploads everything to s3://<bucket>/surveycx/<version>/ (the bucket policy grants public read).
+// Uploads everything to s3://<bucket>/surveycx/<version>/; the bucket defaults to surveycx-releases-533267257907, whose policy
+// (lambda/release-bucket-policy.json) grants public read on surveycx/*. Pass --no-upload to build only.
 //
 // Release notes and the help center come first: the script refuses to run until web/releases.json has an entry for
 // the version at the top, naming the help-center articles it changed, each marked current for that version.
@@ -16,7 +17,7 @@ const args = process.argv.slice(2);
 const version = args.find((a) => !a.startsWith('--'));
 if (!version || !/^\d+\.\d+\.\d+$/.test(version)) { console.error('usage: node lambda/release.js <x.y.z> [--bucket B] [--region R] [--no-upload]'); process.exit(1); }
 const opt = (k, d) => { const i = args.indexOf('--' + k); return i >= 0 ? args[i + 1] : d; };
-const bucket = opt('bucket', process.env.SURVEYCX_RELEASE_BUCKET || ''), region = opt('region', process.env.AWS_REGION || 'us-east-1');
+const bucket = opt('bucket', process.env.SURVEYCX_RELEASE_BUCKET || 'surveycx-releases-533267257907'), region = opt('region', process.env.AWS_REGION || 'us-east-1');
 const upload = !args.includes('--no-upload') && !!bucket;
 
 const root = path.join(__dirname, '..');
