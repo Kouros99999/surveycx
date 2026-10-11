@@ -22,6 +22,7 @@
     <label style="margin:0">Survey <select id="f-survey" style="width:auto"><option value="">All</option></select></label>
     <label style="margin:0">Queue <select id="f-queue" style="width:auto"><option value="">All</option></select></label>
     <label style="margin:0" id="agent-filter">Agent <select id="f-agent" style="width:auto"><option value="">All</option></select></label>
+    <label style="margin:0" id="tenant-filter" hidden>Tenant <select id="f-tenant" style="width:auto"><option value="">All</option></select></label>
     <label style="margin:0"><input type="checkbox" id="f-low"> Low scores only</label>
     <span style="flex:1"></span>
     <button type="button" class="btn ghost small" id="export">Export CSV</button>
@@ -38,6 +39,7 @@
     <div class="card scroll"><h2>By queue</h2><table id="t-queues"></table></div>
     <div class="card scroll"><h2>By driver</h2><table id="t-drivers"></table></div>
     <div class="card scroll"><h2>By channel</h2><table id="t-channels"></table></div>
+    <div class="card scroll" id="t-tenants-card" hidden style="grid-column:1/-1"><h2>By tenant</h2><table id="t-tenants"></table></div>
   </div>
   <div class="card scroll" style="margin-top:1rem"><h2>Responses <span class="muted" style="font-weight:400;font-size:.85rem" id="resp-count"></span></h2><table id="t-responses"></table></div>
 </main>
@@ -60,8 +62,8 @@
   const day = (d) => d.toISOString().slice(0, 10);
   function range() { const r = $('f-range').value; if (r === 'custom') return { from: $('f-from').value, to: $('f-to').value }; const to = new Date(); const from = new Date(to.getTime() - (+r - 1) * 86400000); return { from: day(from), to: day(to) }; }
   $('f-range').onchange = () => { $('custom').classList.toggle('hidden', $('f-range').value !== 'custom'); load(); };
-  ['f-from', 'f-to', 'f-survey', 'f-queue', 'f-agent', 'f-low'].forEach((id) => { $(id).onchange = load; });
-  const qs = () => { const { from, to } = range(); const p = new URLSearchParams({ from, to }); if ($('f-survey').value) p.set('surveyId', $('f-survey').value); if ($('f-queue').value) p.set('queue', $('f-queue').value); if ($('f-agent').value) p.set('agent', $('f-agent').value); if ($('f-low').checked) p.set('low', '1'); return p.toString(); };
+  ['f-from', 'f-to', 'f-survey', 'f-queue', 'f-agent', 'f-tenant', 'f-low'].forEach((id) => { $(id).onchange = load; });
+  const qs = () => { const { from, to } = range(); const p = new URLSearchParams({ from, to }); if ($('f-survey').value) p.set('surveyId', $('f-survey').value); if ($('f-queue').value) p.set('queue', $('f-queue').value); if ($('f-agent').value) p.set('agent', $('f-agent').value); if ($('f-tenant').value) p.set('tenant', $('f-tenant').value); if ($('f-low').checked) p.set('low', '1'); return p.toString(); };
   const fill = (sel, values, label) => { const cur = sel.value; sel.innerHTML = '<option value="">All</option>' + values.map((v) => `<option value="${esc(v.id)}">${esc(label ? label(v) : v.id)}</option>`).join(''); sel.value = [...sel.options].some((o) => o.value === cur) ? cur : ''; };
   const tile = (v, l) => `<div class="tile"><div class="v">${v}</div><div class="l">${l}</div></div>`;
   const table = (el, rows, cols) => { el.innerHTML = `<thead><tr>${cols.map((c) => `<th class="${c.num ? 'num' : ''}">${c.h}</th>`).join('')}</tr></thead><tbody>${rows.map((r) => `<tr>${cols.map((c) => `<td class="${c.num ? 'num' : ''}">${c.f(r)}</td>`).join('')}</tr>`).join('') || '<tr><td colspan="9" class="muted">Nothing in this period.</td></tr>'}</tbody>`; };
@@ -73,6 +75,7 @@
       const [rep, resp] = await Promise.all([api('GET', '/report?' + q), api('GET', '/responses?' + q)]);
       surveys = rep.surveys; lastRows = resp.responses;
       fill($('f-survey'), rep.surveys, (s) => s.name); fill($('f-queue'), rep.queues); fill($('f-agent'), rep.agents, (a) => a.name);
+      if ((rep.tenants || []).length || $('f-tenant').value) { $('tenant-filter').hidden = false; if (!$('f-tenant').value) fill($('f-tenant'), rep.tenants); }
       const o = rep.overall;
       $('tiles').innerHTML = tile(o.n, 'completed responses') + tile(fmt.pct(o.completion), `completion (${o.offered} offered)`) + tile(fmt.pct(o.csatPct), 'CSAT, 4 or 5 of 5') + tile(fmt.n1(o.csat), 'CSAT average') + tile(fmt.int(o.nps), 'NPS') + tile(fmt.n1(o.ces), 'effort, 1-7') + tile(o.low, 'low scores');
       const prev = await api('GET', '/report?' + new URLSearchParams(Object.assign(Object.fromEntries(new URLSearchParams(q)), previous(rep.from, rep.to))).toString()).catch(() => null);
@@ -86,6 +89,7 @@
       table($('t-agents'), rep.agents, [{ h: 'Agent', f: (r) => esc(r.name) }, ...G]);
       table($('t-queues'), rep.queues, [{ h: 'Queue', f: (r) => esc(r.id) }, ...G]);
       table($('t-drivers'), rep.drivers, [{ h: 'Driver', f: (r) => esc(r.id) + (r.type === 'choice' ? '<div class="muted">' + Object.entries(r.choices).map(([k, v]) => esc(k) + ' ' + v).join(', ') + '</div>' : '') }, { h: 'Answers', num: true, f: (r) => r.n }, { h: 'Avg (1-5)', num: true, f: (r) => fmt.n1(r.five) }, { h: 'NPS', num: true, f: (r) => fmt.int(r.nps) }, { h: 'CES', num: true, f: (r) => fmt.n1(r.ces) }]);
+      $('t-tenants-card').hidden = !(rep.tenants || []).length; table($('t-tenants'), rep.tenants || [], [{ h: 'Tenant', f: (r) => esc(r.id) }, { h: 'Offered', num: true, f: (r) => r.offered }, { h: 'Completion', num: true, f: (r) => fmt.pct(r.completion) }, ...G]);
       table($('t-channels'), rep.channels, [{ h: 'Channel', f: (r) => esc(r.id) }, { h: 'Offered', num: true, f: (r) => r.offered }, { h: 'Completion', num: true, f: (r) => fmt.pct(r.completion) }, ...G]);
       $('resp-count').textContent = `${resp.responses.length} shown, newest first`;
       table($('t-responses'), resp.responses, [{ h: 'When', f: (r) => fmt.when(r.completedAt || r.startedAt) }, { h: 'Agent', f: (r) => esc(r.agentName || '') }, { h: 'Queue', f: (r) => esc(r.queue || '') }, { h: 'Channel', f: (r) => esc(r.channel) }, { h: 'Status', f: (r) => r.status === 'completed' ? (r.scores && r.scores.low ? '<span class="pill low">low</span>' : '<span class="pill">done</span>') : `<span class="pill paused">${r.status}</span>` }, { h: 'Score', num: true, f: (r) => fmt.n1(r.scores && r.scores.five) }, { h: 'Comment', f: (r) => esc(comment(r)) }, { h: '', f: (r) => `<button type="button" class="btn ghost small" data-c="${esc(r.contactId)}">Open</button>` }]);

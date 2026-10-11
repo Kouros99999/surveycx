@@ -31,6 +31,10 @@ Parameters:
     Type: String
     Default: email
     Description: Contact attribute your flows store the customer's email address in, for email invitations.
+  TenantAttribute:
+    Type: String
+    Default: ''
+    Description: Optional. Contact attribute that names the tenant or business unit a contact belongs to, when one instance serves several. Reports can then be split per tenant.
   Timezone:
     Type: String
     Default: UTC
@@ -115,6 +119,7 @@ Globals:
         RETENTION_DAYS: !Ref RetentionDays
         CONNECT_INSTANCE_ID: !Ref ConnectInstanceId
         CONNECT_INSTANCE_URL: !Ref ConnectInstanceUrl
+        TENANT_ATTRIBUTE: !Ref TenantAttribute
         # The site URL is not an env var: every function reading ${Distribution.DomainName} would make a cycle through the API.
         # The site installer writes it into the settings row; functions read settings.siteUrl.
         PROVIDER: !Ref Provider

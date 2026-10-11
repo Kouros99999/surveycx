@@ -14,6 +14,7 @@
  *   email       customer's email, for email invitations
  *   endedAt     ISO time the contact ended
  *   platform    connect | genesys | ... (wording only)
+ *   tenant      the partner's tenant or business unit the contact belongs to; reports can be split by it
  */
 'use strict';
 const str = (v, max) => (v == null ? undefined : String(v).trim().slice(0, max || 200) || undefined);
@@ -32,13 +33,13 @@ function normalizeContact(e, nowIso) {
   if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('email must be an address');
   const attrs = {};
   if (e.attributes && typeof e.attributes === 'object') for (const k of Object.keys(e.attributes).slice(0, 50)) attrs[str(k, 120)] = str(e.attributes[k], 500) || '';
-  const out = { contactId, channel, agent: str(e.agent, 300), agentName: str(e.agentName, 120), queue: str(e.queue, 120), attributes: attrs, phone: phone ? '+' + phone.replace(/[^\d]/g, '') : undefined, email: email ? email.toLowerCase() : undefined, endedAt: endedAt.toISOString(), platform: str(e.platform, 40) || 'generic' };
+  const out = { contactId, channel, agent: str(e.agent, 300), agentName: str(e.agentName, 120), queue: str(e.queue, 120), attributes: attrs, phone: phone ? '+' + phone.replace(/[^\d]/g, '') : undefined, email: email ? email.toLowerCase() : undefined, endedAt: endedAt.toISOString(), platform: str(e.platform, 40) || 'generic', tenant: str(e.tenant, 80) };
   for (const k of Object.keys(out)) if (out[k] === undefined) delete out[k];
   return out;
 }
 
 /** Amazon Connect contact record (CTR) -> canonical contact. Pure. Returns null for records that are not finished contacts. */
-function fromContactRecord(ctr, emailAttribute) {
+function fromContactRecord(ctr, emailAttribute, tenantAttribute) {
   if (!ctr || !ctr.ContactId || !ctr.DisconnectTimestamp) return null;
   const ch = String(ctr.Channel || 'VOICE').toLowerCase();
   const agent = ctr.Agent || {};
@@ -48,10 +49,10 @@ function fromContactRecord(ctr, emailAttribute) {
   const email = (emailAttribute && attrs[emailAttribute]) || (ep.Type === 'EMAIL_ADDRESS' ? ep.Address : undefined);
   const name = [agent.FirstName, agent.LastName].filter(Boolean).join(' ') || agent.Username;
   try {
-    return normalizeContact({ contactId: ctr.ContactId, channel: ch === 'voice' || ch === 'chat' || ch === 'task' || ch === 'email' ? ch : 'voice', agent: agent.ARN, agentName: name, queue: ctr.Queue && ctr.Queue.Name, attributes: attrs, phone, email, endedAt: ctr.DisconnectTimestamp, platform: 'connect', initiationMethod: ctr.InitiationMethod });
+    return normalizeContact({ contactId: ctr.ContactId, channel: ch === 'voice' || ch === 'chat' || ch === 'task' || ch === 'email' ? ch : 'voice', agent: agent.ARN, agentName: name, queue: ctr.Queue && ctr.Queue.Name, attributes: attrs, phone, email, endedAt: ctr.DisconnectTimestamp, platform: 'connect', tenant: tenantAttribute ? attrs[tenantAttribute] : undefined });
   } catch (e) {
     // A bad phone or email on the record must not lose the contact: drop the bad address and keep going.
-    return normalizeContact({ contactId: ctr.ContactId, channel: ch === 'chat' ? 'chat' : 'voice', agent: agent.ARN, agentName: name, queue: ctr.Queue && ctr.Queue.Name, attributes: attrs, endedAt: ctr.DisconnectTimestamp, platform: 'connect' });
+    return normalizeContact({ contactId: ctr.ContactId, channel: ch === 'chat' ? 'chat' : 'voice', agent: agent.ARN, agentName: name, queue: ctr.Queue && ctr.Queue.Name, attributes: attrs, endedAt: ctr.DisconnectTimestamp, platform: 'connect', tenant: tenantAttribute ? attrs[tenantAttribute] : undefined });
   }
 }
 

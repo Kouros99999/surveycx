@@ -94,5 +94,5 @@ test('aggregate groups by agent, queue, driver, day and channel with a completio
   const fcr = a.drivers.find((d) => d.id === 'First contact resolution'); assert.equal(fcr.n, 3); assert.equal(fcr.five, 3.7);
   assert.equal(a.drivers.find((d) => d.id === 'Recommend').nps, 0);
   const csv = S.toCsv(rows, [s]);
-  assert.match(csv.split('\n')[0], /contactId,survey,.*Post-contact survey: How satisfied/); assert.equal(csv.trim().split('\n').length, 6);
+  assert.match(csv.split('\n')[0], /contactId,tenant,survey,.*Post-contact survey: How satisfied/); assert.equal(csv.trim().split('\n').length, 6);
 });

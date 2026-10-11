@@ -17,7 +17,7 @@ async function offer(store, contact, survey, channel, nowIso, extra) {
   const existing = await store.getResponse(contact.contactId);
   if (existing) return existing;
   const row = Object.assign({ contactId: contact.contactId, surveyId: survey.id, channel, status: 'offered', startedAt: nowIso, answers: {},
-    agentArn: contact.agent, agentName: contact.agentName, queue: contact.queue, platform: contact.platform || 'connect', customerHash: store.customerHash(contact.phone || contact.email) || undefined,
+    agentArn: contact.agent, agentName: contact.agentName, queue: contact.queue, platform: contact.platform || 'connect', tenant: contact.tenant || undefined, customerHash: store.customerHash(contact.phone || contact.email) || undefined,
     attributes: pickAttrs(contact.attributes) }, extra || {});
   if (channel === 'sms' || channel === 'email' || channel === 'web') row.token = newToken();
   await store.putResponse(row);
@@ -85,7 +85,7 @@ async function closeLoop(row, survey, settings, deps) {
   }
   // 3. An event per response for anything else the customer wants to wire up (Slack, CRM, warehouse).
   if (c && c.events) {
-    try { await c.events.send(new c.PutEventsCommand({ Entries: [{ Source: 'surveycx', DetailType: sc.low ? 'Survey Completed - Low Score' : 'Survey Completed', Detail: JSON.stringify({ contactId: row.contactId, surveyId: survey.id, surveyName: survey.name, channel: row.channel, queue: row.queue, agent: row.agentArn, agentName: row.agentName, scores: sc, answers: row.answers, completedAt: row.completedAt }) }] })); }
+    try { await c.events.send(new c.PutEventsCommand({ Entries: [{ Source: 'surveycx', DetailType: sc.low ? 'Survey Completed - Low Score' : 'Survey Completed', Detail: JSON.stringify({ contactId: row.contactId, tenant: row.tenant, surveyId: survey.id, surveyName: survey.name, channel: row.channel, queue: row.queue, agent: row.agentArn, agentName: row.agentName, scores: sc, answers: row.answers, completedAt: row.completedAt }) }] })); }
     catch (e) { log('event', e); }
   }
   // 4. Webhooks for other apps: the whole response, signed so the receiver can verify it came from this stack.
@@ -93,7 +93,7 @@ async function closeLoop(row, survey, settings, deps) {
     const wants = w.events || ['completed'];
     if (!w.url || !(wants.includes('completed') || (sc.low && wants.includes('low')))) continue;   // 'low' alone means only low scores
     try {
-      const body = { event: sc.low ? 'survey.completed.low' : 'survey.completed', contactId: row.contactId, surveyId: survey.id, surveyName: survey.name, platform: row.platform, channel: row.channel, queue: row.queue, agent: row.agentArn, agentName: row.agentArn ? row.agentName : undefined, scores: sc, answers: row.answers, startedAt: row.startedAt, completedAt: row.completedAt };
+      const body = { event: sc.low ? 'survey.completed.low' : 'survey.completed', contactId: row.contactId, tenant: row.tenant, surveyId: survey.id, surveyName: survey.name, platform: row.platform, channel: row.channel, queue: row.queue, agent: row.agentArn, agentName: row.agentArn ? row.agentName : undefined, scores: sc, answers: row.answers, startedAt: row.startedAt, completedAt: row.completedAt };
       await (deps.post || exports.post)(w.url, body, w.secret ? { 'x-surveycx-signature': 'sha256=' + crypto.createHmac('sha256', w.secret).update(JSON.stringify(body)).digest('hex') } : {});
     } catch (e) { log('webhook', e); }
   }

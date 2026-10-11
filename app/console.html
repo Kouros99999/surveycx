@@ -273,13 +273,14 @@
   $('s-hooks').onsubmit = (e) => { e.preventDefault(); save({ webhooks: readHooks() }); };
   async function loadKeys() {
     const { keys } = await api('GET', '/keys');
-    $('key-list').innerHTML = keys.map((k) => `<li><div><b>${esc(k.label)}</b> <span class="pill">${k.kind}</span><div class="muted">${esc(k.key)} · created ${fmt.day(k.createdAt)} by ${esc(k.createdBy)} · expires ${fmt.day(k.expiresAt)}</div></div><button type="button" class="btn danger small" data-key="${esc(k.id)}">Revoke</button></li>`).join('') || '<li class="muted">No keys.</li>';
+    $('key-list').innerHTML = keys.map((k) => `<li><div><b>${esc(k.label)}</b> <span class="pill">${k.kind}</span>${k.tenant ? ' <span class="pill">tenant: ' + esc(k.tenant) + '</span>' : ''}<div class="muted">${esc(k.key)} · created ${fmt.day(k.createdAt)} by ${esc(k.createdBy)} · expires ${fmt.day(k.expiresAt)}</div></div><button type="button" class="btn danger small" data-key="${esc(k.id)}">Revoke</button></li>`).join('') || '<li class="muted">No keys.</li>';
     $('key-list').querySelectorAll('button[data-key]').forEach((b) => { b.onclick = async () => { if (!confirm('Revoke this key? Anything using it stops working.')) return; await api('DELETE', '/keys/' + encodeURIComponent(b.dataset.key)); loadKeys(); }; });
   }
   $('new-key').onclick = async () => {
     const kind = prompt('Key type: "ingest" (another platform reports contacts or answers) or "data" (read-only for BI)', 'ingest'); if (!kind) return;
     const label = prompt('Label (e.g. Genesys production, Power BI)', kind === 'data' ? 'Warehouse' : 'Platform connector'); if (label === null) return;
-    const r = await api('POST', '/keys', { kind, label });
+    const tenant = prompt('Tenant (optional). Everything this key creates is tagged with it and a data key reads only it; leave empty for all tenants.', ''); if (tenant === null) return;
+    const r = await api('POST', '/keys', { kind, label, tenant });
     prompt('Copy this key now; it will not be shown again:', r.key);
     loadKeys();
   };

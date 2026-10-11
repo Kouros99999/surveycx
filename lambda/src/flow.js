@@ -28,7 +28,8 @@ function parseEvent(event) {
   const cd = d.ContactData || {}, p = d.Parameters || {};
   const ch = String(cd.Channel || 'VOICE').toLowerCase();
   const ep = cd.CustomerEndpoint || {};
-  const contact = { contactId: cd.InitialContactId || cd.ContactId, channel: ch === 'chat' ? 'chat' : 'voice', queue: cd.Queue && cd.Queue.Name, attributes: cd.Attributes || {}, phone: ep.Type === 'TELEPHONE_NUMBER' ? ep.Address : undefined, platform: 'connect' };
+  const attrs = cd.Attributes || {}, tenantAttr = process.env.TENANT_ATTRIBUTE || '';
+  const contact = { contactId: cd.InitialContactId || cd.ContactId, channel: ch === 'chat' ? 'chat' : 'voice', queue: cd.Queue && cd.Queue.Name, attributes: attrs, phone: ep.Type === 'TELEPHONE_NUMBER' ? ep.Address : undefined, platform: 'connect', tenant: tenantAttr ? attrs[tenantAttr] : undefined };
   return { action: String(p.action || 'start').toLowerCase(), digits: p.digits == null ? '' : String(p.digits).trim(), contact };
 }
 

@@ -217,7 +217,7 @@
   function aggregate(rows, surveys) {
     const byId = Object.fromEntries((surveys || []).map((s) => [s.id, s]));
     const group = () => ({ n: 0, offered: 0, started: 0, ratings: [], nps: [], ces: [], fives: [], low: 0 });
-    const overall = group(), agents = {}, queues = {}, days = {}, drivers = {}, channels = {};
+    const overall = group(), agents = {}, queues = {}, days = {}, drivers = {}, channels = {}, tenants = {};
     const add = (g, r) => {
       g.offered++;
       if (r.status === 'started' || r.status === 'completed') g.started++;
@@ -237,6 +237,7 @@
       add(queues[q] = queues[q] || Object.assign(group(), { id: q }), r);
       add(days[d] = days[d] || Object.assign(group(), { id: d }), r);
       add(channels[c] = channels[c] || Object.assign(group(), { id: c }), r);
+      if (r.tenant) add(tenants[r.tenant] = tenants[r.tenant] || Object.assign(group(), { id: r.tenant }), r);
       if (r.status === 'completed') {
         const s = byId[r.surveyId];
         for (const qd of (s ? s.questions : [])) {
@@ -252,7 +253,7 @@
     }
     const fin = (g) => { const c = csatOf(g.ratings); return Object.assign({}, g, { csat: c.mean, csatPct: c.pct, nps: npsOf(g.nps), ces: g.ces.length ? round1(g.ces.reduce((a, b) => a + b, 0) / g.ces.length) : null, five: g.fives.length ? round1(g.fives.reduce((a, b) => a + b, 0) / g.fives.length) : null, completion: g.offered ? Math.round((g.n / g.offered) * 100) : null, ratings: undefined, fives: undefined, ces_: undefined }); };
     const list = (o) => Object.values(o).map(fin).sort((x, y) => (y.n - x.n) || String(x.id).localeCompare(String(y.id)));
-    return { overall: fin(overall), agents: list(agents), queues: list(queues), drivers: list(drivers), channels: list(channels), days: Object.values(days).map(fin).sort((x, y) => x.id.localeCompare(y.id)) };
+    return { overall: fin(overall), agents: list(agents), queues: list(queues), drivers: list(drivers), channels: list(channels), tenants: list(tenants), days: Object.values(days).map(fin).sort((x, y) => x.id.localeCompare(y.id)) };
   }
 
   /** CSV of responses, one row per response with a column per question. Quotes and commas escaped. */
@@ -260,12 +261,12 @@
     const byId = Object.fromEntries((surveys || []).map((s) => [s.id, s]));
     const qcols = [];
     for (const s of surveys || []) for (const q of s.questions) if (!qcols.some((c) => c.id === q.id)) qcols.push({ id: q.id, label: `${s.name}: ${q.text}` });
-    const head = ['contactId', 'survey', 'channel', 'queue', 'agent', 'agentArn', 'status', 'startedAt', 'completedAt', 'csat', 'nps', 'ces', 'five', 'low', ...qcols.map((c) => c.label)];
+    const head = ['contactId', 'tenant', 'survey', 'channel', 'queue', 'agent', 'agentArn', 'status', 'startedAt', 'completedAt', 'csat', 'nps', 'ces', 'five', 'low', ...qcols.map((c) => c.label)];
     const esc = (v) => { const s = v == null ? '' : String(v); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
     const lines = [head.map(esc).join(',')];
     for (const r of rows) {
       const s = byId[r.surveyId], sc = r.scores || {};
-      lines.push([r.contactId, s ? s.name : r.surveyId, r.channel, r.queue, r.agentName, r.agentArn, r.status, r.startedAt, r.completedAt, sc.csat, sc.nps, sc.ces, sc.five, sc.low ? 'yes' : '', ...qcols.map((c) => (r.answers || {})[c.id])].map(esc).join(','));
+      lines.push([r.contactId, r.tenant, s ? s.name : r.surveyId, r.channel, r.queue, r.agentName, r.agentArn, r.status, r.startedAt, r.completedAt, sc.csat, sc.nps, sc.ces, sc.five, sc.low ? 'yes' : '', ...qcols.map((c) => (r.answers || {})[c.id])].map(esc).join(','));
     }
     return lines.join('\n') + '\n';
   }

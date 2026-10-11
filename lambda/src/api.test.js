@@ -143,3 +143,28 @@ test('partner API: invitations return a link the caller delivers, surveys are re
   r = await call(h, 'PUT', '/settings', { webhooks: [{ url: 'https://hooks.test/a', secret: '••••shh', events: ['completed'] }, { url: 'http://insecure', secret: 'x' }] }, sup);
   assert.equal(r.json.settings.webhooks.length, 1, 'http dropped'); assert.equal(r.json.settings.webhooks[0].secret, '••••shh'); assert.equal((await s.getSettings()).webhooks[0].secret, 'shh', 'masked secret kept');
 });
+
+test('tenants: a tenant-bound ingest key tags what it creates; a tenant-bound data key reads only its tenant; reports group by tenant', async () => {
+  const s = mem.make(); await s.putSurvey(S.normalizeSurvey({ id: 'default', name: 'Default', questions: [{ id: 'csat', type: 'rating', text: 'How did we do?' }] }));
+  await s.putSettings({ siteUrl: 'https://site.test' });
+  const h = api.makeHandler({ store: s, now: () => new Date('2026-10-11T12:00:00Z'), clients: {}, post: async () => {} });
+  const ikA = (await call(h, 'POST', '/keys', { kind: 'ingest', tenant: 'acme' }, sup)).json.key, ikB = (await call(h, 'POST', '/keys', { kind: 'ingest', tenant: 'globex' }, sup)).json.key;
+  const dkA = (await call(h, 'POST', '/keys', { kind: 'data', tenant: 'acme' }, sup)).json.key, dkAll = (await call(h, 'POST', '/keys', { kind: 'data' }, sup)).json.key;
+  assert.equal((await call(h, 'GET', '/keys', null, sup)).json.keys.find((k) => k.id === ikA).tenant, 'acme');
+  for (const [ik, id, score] of [[ikA, 'a1', 5], [ikA, 'a2', 2], [ikB, 'g1', 4]]) {
+    const r = await call(h, 'POST', '/ingest/' + ik + '/invitations', { contactId: id, agent: 'agent-' + id, tenant: 'ignored-when-key-bound' });
+    await call(h, 'POST', '/s/' + r.json.token + '/answers', { answers: { csat: score } });
+  }
+  assert.equal((await s.getResponse('a1')).tenant, 'acme'); assert.equal((await s.getResponse('g1')).tenant, 'globex');
+  await call(h, 'POST', '/ingest/' + ikB + '/responses', { responses: [{ contactId: 'g2', agent: 'x', answers: { csat: 3 } }] });
+  assert.equal((await s.getResponse('g2')).tenant, 'globex');
+  let r = await call(h, 'GET', '/data/' + dkA + '/report', null, null, { from: '2026-10-11', to: '2026-10-11' });
+  assert.equal(r.json.tenant, 'acme'); assert.equal(r.json.overall.n, 2); assert.equal(r.json.tenants.length, 1);
+  r = await call(h, 'GET', '/data/' + dkA + '/responses', null, null, { from: '2026-10-11', to: '2026-10-11', tenant: 'globex' });
+  assert.equal(r.json.responses.length, 2, 'a bound key ignores the query tenant'); assert.ok(r.json.responses.every((x) => x.tenant === 'acme'));
+  r = await call(h, 'GET', '/data/' + dkAll + '/report', null, null, { from: '2026-10-11', to: '2026-10-11' });
+  assert.equal(r.json.overall.n, 4); assert.deepEqual(r.json.tenants.map((t) => [t.id, t.n]).sort(), [['acme', 2], ['globex', 2]]);
+  r = await call(h, 'GET', '/data/' + dkAll + '/report', null, null, { from: '2026-10-11', to: '2026-10-11', tenant: 'globex' }); assert.equal(r.json.overall.n, 2);
+  r = await call(h, 'GET', '/report', null, sup, { tenant: 'acme' }); assert.equal(r.json.overall.n, 2);
+  assert.match(S.toCsv(await s.responsesBetween('2026-10-11', '2026-10-11'), await s.listSurveys()).split('\n')[1], /^a1,acme,/);
+});

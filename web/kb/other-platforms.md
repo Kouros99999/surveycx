@@ -41,6 +41,10 @@ GET https://<SiteUrl>/api/data/<key>/responses?from=2026-10-01&to=2026-10-31
 
 Up to 92 days per call; the rows are the same as the CSV export, without customer hashes or tokens. EventBridge events are the alternative for a push feed; see [Closed loop](kb.html?a=closed-loop).
 
+## Several tenants on one stack
+
+A partner serving several clients, or a company with several business units, tags each contact with a **tenant**: bind each client's ingest and data keys to their tenant in *Settings > Other platforms and BI*, and on Amazon Connect set the stack's `TenantAttribute` parameter to the contact attribute that names the unit. The results page gains a tenant filter and a per-tenant table, the CSV and webhooks carry the tenant, and a tenant-bound data key can never read another tenant's responses. Surveys and settings are still shared across the stack; for full isolation (own surveys, own brand, own sign-ins) deploy one stack per client.
+
 ## Rendering the survey in your own interface
 
 If you would rather show the questions inside your own chat widget or agent desktop, ask for a link with `POST /api/ingest/<key>/invitations` and either open the hosted page or read the definitions with `GET /api/ingest/<key>/surveys` and post the answers yourself. Signed webhooks tell your application about every completed response. All of it is in the [API reference](kb.html?a=api-reference).

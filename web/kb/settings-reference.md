@@ -11,6 +11,7 @@
 | `InboundSmsTopicArn` | empty | SNS topic that receives inbound SMS, so STOP replies opt customers out. |
 | `EmailFrom` | empty | SES-verified sender for email invitations. Empty disables email unless set in the console. |
 | `EmailAttribute` | `email` | Contact attribute holding the customer's email. |
+| `TenantAttribute` | empty | Contact attribute naming the tenant or business unit, for per-tenant reporting. |
 | `Timezone` | `UTC` | IANA zone for the send window and day boundaries. |
 | `RetentionDays` | 400 | Days responses are kept. |
 | `Provider` | `connect` | `connect` or `generic` (another platform through the ingest endpoint). |

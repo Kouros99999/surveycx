@@ -10,7 +10,7 @@ The sentence at the top compares the chosen period with the one before it: *130 
 
 ## Filters
 
-Period (7, 30, 90 days or custom, up to 92 days), survey, queue, agent, and *low scores only*. Every table and the export follow the filters.
+Period (7, 30, 90 days or custom, up to 92 days), survey, queue, agent, tenant (shown when responses carry one), and *low scores only*. Every table and the export follow the filters; a *By tenant* table appears when tenants are in use.
 
 ## Completion
 

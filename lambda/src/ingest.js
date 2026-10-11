@@ -13,6 +13,7 @@ const contacts = require('./contacts.js');
 const delivery = require('./delivery.js');
 
 const EMAIL_ATTRIBUTE = process.env.EMAIL_ATTRIBUTE || 'email';
+const TENANT_ATTRIBUTE = process.env.TENANT_ATTRIBUTE || '';   // contact attribute naming the tenant or business unit, when one instance serves several
 
 function decode(record) { return JSON.parse(Buffer.from(record.kinesis.data, 'base64').toString('utf8')); }
 
@@ -25,6 +26,7 @@ async function processContact(s, c, nowMs, deps) {
     if (c.agent && row.agentArn !== c.agent) { row.agentArn = c.agent; row.agentName = c.agentName || row.agentName; changed = true; }
     if (c.queue && row.queue !== c.queue) { row.queue = c.queue; changed = true; }
     if (!row.customerHash && (c.phone || c.email)) { row.customerHash = s.customerHash(c.phone || c.email); changed = true; }
+    if (c.tenant && row.tenant !== c.tenant) { row.tenant = c.tenant; changed = true; }
     if (changed) await s.putResponse(row);
     if (c.agent) await s.touchAgent(c.agent, c.agentName, c.queue, nowIso);
     // The score may have been completed before the agent was known: Arena and the attributes would have gone out without it.
@@ -43,7 +45,7 @@ function makeHandler(deps) {
     const failures = [];
     for (const record of event.Records || []) {
       try {
-        const c = contacts.fromContactRecord(decode(record), EMAIL_ATTRIBUTE);
+        const c = contacts.fromContactRecord(decode(record), EMAIL_ATTRIBUTE, TENANT_ATTRIBUTE);
         if (!c) continue;
         console.log(JSON.stringify(await processContact(s, c, now(), deps)));
       } catch (err) {

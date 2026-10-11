@@ -11,7 +11,8 @@
  *   GET /export.csv?from&to                               CSV download (supervisors)
  *   POST /privacy/delete { phone | email | contactId }    delete everything about a customer or a contact (supervisors)
  *   GET /agents                                           agents seen so far
- *   GET/POST /keys, DELETE /keys/{key}                    ingest and data keys for other platforms and BI tools (supervisors)
+ *   GET/POST /keys, DELETE /keys/{key}                    ingest and data keys for other platforms and BI tools (supervisors); { tenant } binds a key to one tenant:
+ *                                                         everything an ingest key creates carries it, a data key only reads it, and a key without a tenant sees everything
  * Public (the token or key in the path is the credential):
  *   GET  /s/{token}                                       the survey for a web link (questions, brand); answers so far
  *   POST /s/{token}/answers { answers: { qid: value } }   save answers; completes when every required question is answered
@@ -101,7 +102,7 @@ function mergeSettings(cur, body) {
 function makeHandler(deps) {
   const s = deps.store || storeMod, now = deps.now || (() => new Date());
   const rangeOf = (q) => { const today = clock.dayKey(now()); const to = clock.isDay(q.to) && q.to <= today ? q.to : today; let from = clock.isDay(q.from) ? q.from : clock.addDays(to, -29); if (from > to) from = to; if (clock.addDays(from, MAX_DAYS - 1) < to) from = clock.addDays(to, 1 - MAX_DAYS); return { from, to }; };
-  const filterRows = (rows, q, claims) => rows.filter((r) => (!q.surveyId || r.surveyId === q.surveyId) && (!q.queue || r.queue === q.queue) && (!q.agent || r.agentArn === q.agent) && (!q.low || (r.scores && r.scores.low)) && (isSupervisor(claims) || r.agentArn === claims['custom:agentArn']));
+  const filterRows = (rows, q, claims) => rows.filter((r) => (!q.surveyId || r.surveyId === q.surveyId) && (!q.queue || r.queue === q.queue) && (!q.agent || r.agentArn === q.agent) && (!q.tenant || r.tenant === q.tenant) && (!q.low || (r.scores && r.scores.low)) && (isSupervisor(claims) || r.agentArn === claims['custom:agentArn']));
   /** A response visible to an agent hides the customer's free text? No: agents see their own feedback whole, but never the customer hash or token. */
   const forViewer = (r, claims) => { const { customerHash, token, ...rest } = r; return isSupervisor(claims) ? rest : Object.assign(rest, { attributes: undefined }); };
   const keyOf = async (key, kind) => { const k = await s.getKey(key); return k && k.kind === kind && !(k.expiresAt && k.expiresAt < now().toISOString()) ? k : null; };
@@ -177,12 +178,12 @@ function makeHandler(deps) {
           return json(200, { removed, optedOut: !!hash });
         }
         case 'agents': { const list = await s.listAgents(); return json(200, { agents: sup ? list : list.filter((a) => a.arn === claims['custom:agentArn']) }); }
-        case 'listKeys': { if (!sup) return json(403, { error: 'supervisors only' }); return json(200, { keys: (await s.listKeys()).map((k) => ({ key: k.key.slice(0, 6) + '…', kind: k.kind, label: k.label, createdAt: k.createdAt, createdBy: k.createdBy, expiresAt: k.expiresAt, id: k.key })) }); }
+        case 'listKeys': { if (!sup) return json(403, { error: 'supervisors only' }); return json(200, { keys: (await s.listKeys()).map((k) => ({ key: k.key.slice(0, 6) + '…', kind: k.kind, label: k.label, tenant: k.tenant, createdAt: k.createdAt, createdBy: k.createdBy, expiresAt: k.expiresAt, id: k.key })) }); }
         case 'createKey': {
           if (!sup) return json(403, { error: 'supervisors only' });
           const b = parse(event), kind = b.kind === 'data' ? 'data' : 'ingest', key = (kind === 'ingest' ? 'ik_' : 'dk_') + require('crypto').randomBytes(24).toString('base64url');
           const days = Math.min(3650, Math.max(1, +(b.days || 365)));
-          const meta = { kind, label: String(b.label || (kind === 'ingest' ? 'Platform connector' : 'Warehouse')).slice(0, 60), createdAt: now().toISOString(), createdBy: who(claims), expiresAt: new Date(now().getTime() + days * 86400000).toISOString() };
+          const meta = { kind, label: String(b.label || (kind === 'ingest' ? 'Platform connector' : 'Warehouse')).slice(0, 60), tenant: String(b.tenant || '').trim().slice(0, 80) || undefined, createdAt: now().toISOString(), createdBy: who(claims), expiresAt: new Date(now().getTime() + days * 86400000).toISOString() };
           await s.putKey(key, meta);
           return json(201, Object.assign({ key }, meta));   // the only time the full key is shown
         }
@@ -213,21 +214,21 @@ function makeHandler(deps) {
 
         // ---------- public: other platforms ----------
         case 'ingestContacts': {
-          if (!(await keyOf(r.key, 'ingest'))) return json(401, { error: 'ingest key is invalid or expired' });
+          const ik = await keyOf(r.key, 'ingest'); if (!ik) return json(401, { error: 'ingest key is invalid or expired' });
           const b = parse(event), list = Array.isArray(b.contacts) ? b.contacts : Array.isArray(b) ? b : null;
           if (!list) return json(400, { error: 'send { contacts: [...] }' });
           if (list.length > 200) return json(413, { error: 'at most 200 contacts per call' });
           const settings = await s.getSettings(), surveys = await s.listSurveys(), results = [], rejected = [];
           for (let i = 0; i < list.length; i++) {
             let c;
-            try { c = contacts.normalizeContact(list[i], now().toISOString()); } catch (e) { rejected.push({ index: i, error: e.message }); continue; }
+            try { c = contacts.normalizeContact(Object.assign({}, list[i], ik.tenant ? { tenant: ik.tenant } : {}), now().toISOString()); } catch (e) { rejected.push({ index: i, error: e.message }); continue; }
             if (c.agent) await s.touchAgent(c.agent, c.agentName, c.queue, now().toISOString());
             results.push(Object.assign({ contactId: c.contactId }, await delivery.considerOutbound(s, c, settings, surveys, now().getTime())));
           }
           return json(rejected.length && !results.length ? 400 : 200, { results, rejected });
         }
         case 'ingestResponses': {
-          if (!(await keyOf(r.key, 'ingest'))) return json(401, { error: 'ingest key is invalid or expired' });
+          const ik = await keyOf(r.key, 'ingest'); if (!ik) return json(401, { error: 'ingest key is invalid or expired' });
           const b = parse(event), list = Array.isArray(b.responses) ? b.responses : null;
           if (!list) return json(400, { error: 'send { responses: [...] }' });
           if (list.length > 200) return json(413, { error: 'at most 200 responses per call' });
@@ -235,7 +236,7 @@ function makeHandler(deps) {
           for (let i = 0; i < list.length; i++) {
             const e = list[i] || {};
             try {
-              const c = contacts.normalizeContact({ contactId: e.contactId, channel: e.channel && contacts.CHANNELS.includes(e.channel) ? e.channel : 'voice', agent: e.agent, agentName: e.agentName, queue: e.queue, attributes: e.attributes, platform: e.platform, endedAt: e.at }, now().toISOString());
+              const c = contacts.normalizeContact({ contactId: e.contactId, channel: e.channel && contacts.CHANNELS.includes(e.channel) ? e.channel : 'voice', agent: e.agent, agentName: e.agentName, queue: e.queue, attributes: e.attributes, platform: e.platform, endedAt: e.at, tenant: ik.tenant || e.tenant }, now().toISOString());
               const survey = (e.surveyId && surveys.find((x) => x.id === e.surveyId)) || S.pickSurvey(surveys.map((x) => Object.assign({}, x, { target: Object.assign({}, x.target, { channels: S.CHANNELS }) })), c);
               if (!survey) throw new Error('no survey matches; send surveyId');
               if (!e.answers || typeof e.answers !== 'object') throw new Error('answers is required');
@@ -250,10 +251,10 @@ function makeHandler(deps) {
           return json(rejected.length && !accepted ? 400 : 200, { accepted, duplicates, rejected });
         }
         case 'ingestInvitations': {
-          if (!(await keyOf(r.key, 'ingest'))) return json(401, { error: 'ingest key is invalid or expired' });
+          const ik = await keyOf(r.key, 'ingest'); if (!ik) return json(401, { error: 'ingest key is invalid or expired' });
           const b = parse(event);
           let c;
-          try { c = contacts.normalizeContact({ contactId: b.contactId, channel: b.channel && contacts.CHANNELS.includes(b.channel) ? b.channel : 'voice', agent: b.agent, agentName: b.agentName, queue: b.queue, attributes: b.attributes, phone: b.phone, email: b.email, platform: b.platform, endedAt: b.endedAt }, now().toISOString()); } catch (e) { return json(400, { error: e.message }); }
+          try { c = contacts.normalizeContact({ contactId: b.contactId, tenant: ik.tenant || b.tenant, channel: b.channel && contacts.CHANNELS.includes(b.channel) ? b.channel : 'voice', agent: b.agent, agentName: b.agentName, queue: b.queue, attributes: b.attributes, phone: b.phone, email: b.email, platform: b.platform, endedAt: b.endedAt }, now().toISOString()); } catch (e) { return json(400, { error: e.message }); }
           const surveys = await s.listSurveys(), settings = await s.getSettings();
           if (b.deliver === true) return json(200, Object.assign({ contactId: c.contactId }, await delivery.considerOutbound(s, c, settings, surveys, now().getTime())));
           // The caller delivers the link itself: no channel rules, no sending; opt-out still applies to a known address.
@@ -273,16 +274,16 @@ function makeHandler(deps) {
           return json(200, { surveys: (await s.listSurveys()).filter((x) => x.status === 'active').map((x) => ({ id: x.id, name: x.name, language: x.language, target: x.target, intro: x.intro, outro: x.outro, questions: x.questions, lowScore: x.lowScore })) });
         }
         case 'dataReport': {
-          if (!(await keyOf(r.key, 'data'))) return json(401, { error: 'data key is invalid or expired' });
-          const { from, to } = rangeOf(qs);
+          const dk = await keyOf(r.key, 'data'); if (!dk) return json(401, { error: 'data key is invalid or expired' });
+          const { from, to } = rangeOf(qs), tenant = dk.tenant || qs.tenant;
           const surveys = await s.listSurveys();
-          const rows = (await s.responsesBetween(from, to)).filter((x) => (!qs.surveyId || x.surveyId === qs.surveyId) && (!qs.queue || x.queue === qs.queue) && (!qs.agent || x.agentArn === qs.agent));
-          return json(200, Object.assign({ from, to, surveys: surveys.map((x) => ({ id: x.id, name: x.name, status: x.status })) }, S.aggregate(rows, surveys)));
+          const rows = (await s.responsesBetween(from, to)).filter((x) => (!qs.surveyId || x.surveyId === qs.surveyId) && (!qs.queue || x.queue === qs.queue) && (!qs.agent || x.agentArn === qs.agent) && (!tenant || x.tenant === tenant));
+          return json(200, Object.assign({ from, to, tenant, surveys: surveys.map((x) => ({ id: x.id, name: x.name, status: x.status })) }, S.aggregate(rows, surveys)));
         }
         case 'dataResponses': {
-          if (!(await keyOf(r.key, 'data'))) return json(401, { error: 'data key is invalid or expired' });
-          const { from, to } = rangeOf(qs);
-          return json(200, { from, to, responses: (await s.responsesBetween(from, to)).map((x) => { const { customerHash, token, ...rest } = x; return rest; }) });
+          const dk = await keyOf(r.key, 'data'); if (!dk) return json(401, { error: 'data key is invalid or expired' });
+          const { from, to } = rangeOf(qs), tenant = dk.tenant || qs.tenant;
+          return json(200, { from, to, tenant, responses: (await s.responsesBetween(from, to)).filter((x) => !tenant || x.tenant === tenant).map((x) => { const { customerHash, token, ...rest } = x; return rest; }) });
         }
         default: return json(404, { error: 'not found' });
       }

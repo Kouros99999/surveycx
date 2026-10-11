@@ -7,7 +7,7 @@ Two kinds of credential exist, both created in *Settings > Other platforms and B
 - an **ingest key** (`ik_…`) lets an application report contacts, request survey links and post answers;
 - a **data key** (`dk_…`) is read-only: responses and the aggregate report.
 
-Keys expire (one year by default) and can be revoked. Requests are JSON; errors are `{ "error": "…" }` with a 4xx status. Public routes are rate-limited (20 requests a second for ingest and survey links, 2 for data).
+A key can be **bound to a tenant** when it is created. Everything an ingest key creates is then tagged with that tenant, and a data key reads only that tenant's responses, so a partner serving several clients from one SurveyCX stack gives each client its own pair of keys and each sees only its own data. A key without a tenant sees everything and may pass `tenant=` on data calls to filter. Contacts and responses may also carry a `tenant` field themselves (ignored when the key is bound). Keys expire (one year by default) and can be revoked. Requests are JSON; errors are `{ "error": "…" }` with a 4xx status. Public routes are rate-limited (20 requests a second for ingest and survey links, 2 for data).
 
 ## Report finished contacts
 
@@ -55,14 +55,14 @@ Each response is stored, scored and closed-loop processed like SurveyCX's own (T
 
 `GET /api/data/{key}/responses?from=2026-10-01&to=2026-10-31` the rows (one per response, with `answers` and `scores`), up to 92 days per call.
 
-`GET /api/data/{key}/report?from&to[&surveyId][&queue][&agent]` the aggregate the results page shows: `overall`, `agents`, `queues`, `drivers`, `channels`, `days`, each with `n`, `offered`, `completion`, `csat`, `csatPct`, `nps`, `ces`, `five`, `low`.
+`GET /api/data/{key}/report?from&to[&surveyId][&queue][&agent][&tenant]` the aggregate the results page shows: `overall`, `agents`, `queues`, `drivers`, `channels`, `tenants`, `days`, each with `n`, `offered`, `completion`, `csat`, `csatPct`, `nps`, `ces`, `five`, `low`.
 
 ## Webhooks
 
 *Settings > Webhooks* takes up to five HTTPS URLs, each with an optional secret and the events it wants: `completed` (every response) or `low` (low scores only). Each completed response is POSTed once as JSON:
 
 ```json
-{ "event": "survey.completed.low", "contactId": "conv-8f3a", "surveyId": "default", "surveyName": "Post-contact survey", "platform": "connect",
+{ "event": "survey.completed.low", "contactId": "conv-8f3a", "tenant": "acme", "surveyId": "default", "surveyName": "Post-contact survey", "platform": "connect",
   "channel": "voice", "queue": "Support", "agent": "arn:…", "agentName": "Ann Lee",
   "scores": { "csat": 1, "nps": 3, "ces": 2, "five": 1.5, "agentFive": 1, "low": true }, "answers": { "csat": 1, "why": "Waited 40 minutes" },
   "startedAt": "…", "completedAt": "…" }
