@@ -1,0 +1,22 @@
+{
+  "name": "surveycx-lambda",
+  "version": "0.1.0",
+  "private": true,
+  "description": "SurveyCX Lambdas: survey flow, contact record ingest, delivery, API, metering",
+  "main": "api.js",
+  "scripts": {
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@aws-sdk/client-cloudfront": "^3.600.0",
+    "@aws-sdk/client-cognito-identity-provider": "^3.600.0",
+    "@aws-sdk/client-connect": "^3.600.0",
+    "@aws-sdk/client-dynamodb": "^3.600.0",
+    "@aws-sdk/client-eventbridge": "^3.600.0",
+    "@aws-sdk/client-marketplace-metering": "^3.600.0",
+    "@aws-sdk/client-pinpoint-sms-voice-v2": "^3.600.0",
+    "@aws-sdk/client-s3": "^3.600.0",
+    "@aws-sdk/client-sesv2": "^3.600.0",
+    "@aws-sdk/lib-dynamodb": "^3.600.0"
+  }
+}

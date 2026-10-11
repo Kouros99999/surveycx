@@ -1,0 +1,34 @@
+[
+  {
+    "version": "0.1.0",
+    "date": "2026-10-11",
+    "title": "First release",
+    "summary": "Post-contact surveys on the IVR, in chat, by SMS and email, with results by agent, queue and driver, a follow-up Task on every low score, and a feed into Arena.",
+    "changes": [
+      "Survey builder: rating 1-5, NPS 0-10, effort 1-7, yes/no, multiple choice and free text; up to ten questions; one survey per queue or contact attribute; sampling; a skip rule so an open question is asked only after a low score; per-question agent-attributable flag.",
+      "Voice and chat: a flow module runs the survey in the disconnect flow; callers answer on the keypad, chat customers reply in the chat.",
+      "SMS and email invitations with a hosted web survey, one-click rating in the email, a frequency cap, a daytime send window, one optional reminder, STOP handling and a hashed suppression list.",
+      "Closed loop: a low score opens an Amazon Connect Task with the answers and a link to the contact; scores are written back as contact attributes; an EventBridge event per response.",
+      "Results page: CSAT, NPS, effort and completion by agent, queue, driver, channel and day, with the previous period for comparison, every response with its comment, CSV export. Agents see their own results.",
+      "Arena feed: each agent-attributable score is sent to Arena for Amazon Connect as a survey score.",
+      "Other platforms: an ingest endpoint takes finished contacts from Genesys or any platform and sends the invitations; answers collected elsewhere can be posted in; a read-only data key for warehouses.",
+      "Privacy: responses expire after the retention you set; delete everything about a customer or a contact from the console.",
+      "AWS Marketplace: billed per completed response, 30-day trial with up to 500 responses a day free."
+    ],
+    "upgrade": [],
+    "docs": [
+      "getting-started",
+      "survey-builder",
+      "voice-and-chat",
+      "sms-and-email",
+      "closed-loop",
+      "results",
+      "arena",
+      "other-platforms",
+      "security-and-data",
+      "billing",
+      "settings-reference",
+      "troubleshooting"
+    ]
+  }
+]

@@ -1,0 +1,97 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: SurveyCX seller-side services for AWS Marketplace. Deploy once in the seller account (us-east-1). Registration page, license lifecycle notifications (EventBridge), customer records. Concurrent-agreements integration.
+
+Parameters:
+  ReleaseBase:
+    Type: String
+    Description: Base URL of the release the registration page launches, e.g. https://arena-releases-533267257907.s3.us-east-1.amazonaws.com/surveycx/0.1.0
+  SupportEmail:
+    Type: String
+    Default: ''
+  MarketplaceProductCode:
+    Type: String
+    Default: ''
+    Description: Product code of the SurveyCX SaaS listing (set once the Marketplace product exists); license events are filtered to it.
+  LaunchRegion:
+    Type: String
+    Default: us-east-1
+    Description: Region the CloudFormation launch link opens in.
+
+Resources:
+  Customers:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions: [{ AttributeName: licenseArn, AttributeType: S }]
+      KeySchema: [{ AttributeName: licenseArn, KeyType: HASH }]
+      PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true }
+
+  RegisterFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub surveycx-register-${AWS::StackName}
+      CodeUri: ./
+      Handler: register.handler
+      Runtime: nodejs22.x
+      Architectures: [arm64]
+      MemorySize: 256
+      Timeout: 15
+      Environment:
+        Variables:
+          RELEASE_BASE: !Ref ReleaseBase
+          CUSTOMERS_TABLE: !Ref Customers
+          SUPPORT_EMAIL: !Ref SupportEmail
+          LAUNCH_REGION: !Ref LaunchRegion
+      Policies:
+        - DynamoDBCrudPolicy: { TableName: !Ref Customers }
+        - Statement:
+            - Effect: Allow
+              Action: [aws-marketplace:ResolveCustomer]
+              Resource: '*'
+      Events:
+        Register:
+          Type: HttpApi
+          Properties: { ApiId: !Ref Api, Path: /register, Method: ANY }
+        Health:
+          Type: HttpApi
+          Properties: { ApiId: !Ref Api, Path: /health, Method: GET }
+
+  Api:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      Description: SurveyCX Marketplace registration
+
+  NotifyFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub surveycx-notify-${AWS::StackName}
+      CodeUri: ./
+      Handler: notify.handler
+      Runtime: nodejs22.x
+      Architectures: [arm64]
+      MemorySize: 256
+      Timeout: 15
+      Environment:
+        Variables:
+          CUSTOMERS_TABLE: !Ref Customers
+      Policies:
+        - DynamoDBCrudPolicy: { TableName: !Ref Customers }
+      Events:
+        LicenseEvents:
+          Type: EventBridgeRule
+          Properties:
+            # Marketplace emits these on the default bus of the seller account in us-east-1 only.
+            Pattern:
+              source: [aws.agreement-marketplace]
+              detail-type: ['License Updated - Manufacturer', 'License Deprovisioned - Manufacturer']
+              detail:
+                product:
+                  code: [!Ref MarketplaceProductCode]
+
+Outputs:
+  RegistrationUrl:
+    Description: Paste this as the SaaS fulfillment (registration) URL in the Marketplace listing.
+    Value: !Sub https://${Api}.execute-api.${AWS::Region}.amazonaws.com/register
+  CustomersTable:
+    Value: !Ref Customers

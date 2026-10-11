@@ -1,0 +1,40 @@
+name: Deploy website to GitHub Pages
+on:
+  push:
+    branches: [main]
+    paths: [app/**, web/**, .github/workflows/pages.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assemble site
+        run: |
+          mkdir -p site
+          cp app/console.html app/results.html app/survey.html app/surveycx-core.js app/surveycx-auth.js app/common.js app/app.css app/demo.js app/demo-seed.js app/logo.svg site/
+          echo 'window.SURVEYCX_CONFIG = { demo: true };' > site/config.js
+          cp -r web/* site/ && rm -f site/releases.test.js site/build-site.js site/make-logo.py
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Render help center, release notes, sitemap and social tags
+        run: npm install --no-save marked@12.0.2 && node web/build-site.js site
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: deployment
+        uses: actions/deploy-pages@v4

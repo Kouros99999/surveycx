@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SurveyCX Release Notes</title>
+<meta name="description" content="What changed in each version of SurveyCX for Amazon Connect.">
+<link rel="icon" type="image/svg+xml" href="logo.svg">
+<link rel="stylesheet" href="site.css?v=1">
+<header class="site"><div class="wrap">
+  <a class="mark" href="./"><img src="logo.svg" alt="">SurveyCX for Amazon Connect</a>
+  <button class="menu-btn" aria-label="Menu" onclick="document.querySelector('nav.main').classList.toggle('open')">Menu</button>
+  <nav class="main"><a href="index.html#features">Features</a><a href="index.html#pricing">Pricing</a><a href="kb.html">Help</a><a href="releases.html">Release notes</a><a href="support.html">Support</a><a class="cta" href="results.html">See the demo</a></nav>
+</div></header>
+<main class="page">
+  <h1>Release notes</h1>
+  <p class="lede">What changed in each version of SurveyCX, newest first.</p>
+  <div id="releases"><p class="muted">Loading release notes…</p></div>
+  <noscript><p>The release notes need JavaScript to display. The same content is in <a href="releases.json">releases.json</a>.</p></noscript>
+</main>
+<footer class="site"><div class="wrap">
+  <div><a class="mark" href="./"><img src="logo.svg" alt="">SurveyCX</a><p style="margin-top:.6rem">Post-contact surveys for Amazon Connect and other contact-centre platforms, by EKPK LLC.</p></div>
+  <div><h4>Product</h4><a href="index.html#features">Features</a><a href="index.html#pricing">Pricing</a><a href="results.html">Demo</a><a href="releases.html">Release notes</a></div>
+  <div><h4>Support</h4><a href="kb.html">Help center</a><a href="support.html">Contact support</a><a href="kb.html?a=security-and-data">Security</a><a href="privacy.html">Privacy policy</a><a href="https://github.com/Kouros99999/surveycx">Documentation on GitHub</a></div>
+  <div class="legal">Amazon Connect is a trademark of Amazon.com, Inc. or its affiliates. SurveyCX is not affiliated with or endorsed by Amazon. © EKPK LLC.</div>
+</div></footer>
+<script>
+(async function () {
+  const box = document.getElementById('releases');
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const day = (iso) => new Date(iso + 'T12:00:00Z').toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' });
+  try {
+    const list = await (await fetch('releases.json', { cache: 'no-cache' })).json();
+    box.innerHTML = list.map((r, i) => `<section class="rel" id="v${esc(r.version)}">
+      <h2>Version ${esc(r.version)}${i === 0 ? ' <span class="tag">Latest</span>' : ''}</h2>
+      <p class="muted">${day(r.date)}</p>
+      <p><b>${esc(r.title)}.</b> ${esc(r.summary)}</p>
+      <ul>${r.changes.map((c) => `<li>${esc(c)}</li>`).join('')}</ul>
+      ${r.upgrade && r.upgrade.length ? `<h3>If you are upgrading</h3><ul>${r.upgrade.map((c) => `<li>${esc(c)}</li>`).join('')}</ul>` : ''}
+    </section>`).join('');
+    if (location.hash) { const el = document.getElementById(location.hash.slice(1)); if (el) el.scrollIntoView(); }
+  } catch (e) { box.innerHTML = '<p>The release notes could not be loaded. Please try again shortly.</p>'; }
+})();
+</script>
+</html>

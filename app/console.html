@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SurveyCX console</title>
+<meta name="description" content="Build post-contact surveys and manage SurveyCX settings.">
+<meta name="robots" content="noindex">
+<link rel="icon" href="logo.svg" type="image/svg+xml">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header class="app">
+  <a class="mark" href="console.html"><img src="logo.svg" alt="" data-brand-logo><span><span data-brand-name="SurveyCX">SurveyCX</span> <span class="muted" style="font-weight:500">console</span></span></a>
+  <nav aria-label="Sections">
+    <button type="button" id="tab-surveys" aria-pressed="true">Surveys</button>
+    <button type="button" id="tab-settings" aria-pressed="false">Settings</button>
+    <a href="results.html">Results</a>
+    <button type="button" id="signout">Sign out</button>
+  </nav>
+</header>
+<main>
+  <div id="not-sup" class="notice hidden">Your sign-in is not in the supervisors group. You can see your own results on the <a href="results.html">results page</a>, but not edit surveys or settings.</div>
+
+  <section id="surveys" class="grid two">
+    <div class="card">
+      <h2>Surveys <button type="button" class="btn small" id="new-survey">New survey</button></h2>
+      <p class="muted">One survey per queue or contact attribute. The most specific match wins; a survey with no target is the default.</p>
+      <ul class="list" id="survey-list" aria-live="polite"></ul>
+    </div>
+    <div class="card" id="editor" hidden>
+      <form id="survey-form">
+        <h2><span id="editor-title">Survey</span><span class="row"><button type="button" class="btn ghost small" id="preview">Preview</button><button type="button" class="btn danger small" id="delete-survey">Delete</button></span></h2>
+        <div class="grid" style="grid-template-columns:1fr 1fr 1fr">
+          <div><label for="f-name">Name</label><input id="f-name" type="text" required maxlength="120"></div>
+          <div><label for="f-status">Status</label><select id="f-status"><option value="active">Active</option><option value="paused">Paused</option></select></div>
+          <div><label for="f-language">Language tag</label><input id="f-language" type="text" placeholder="en-US" maxlength="12"></div>
+        </div>
+        <h3 style="margin-top:1rem">Who gets it</h3>
+        <label for="f-queues">Queues (comma separated; leave empty for any queue)</label><input id="f-queues" type="text" placeholder="Billing, Support">
+        <div class="grid" style="grid-template-columns:1fr 1fr 120px">
+          <div><label for="f-attr-name">Or contact attribute name</label><input id="f-attr-name" type="text" placeholder="tier"></div>
+          <div><label for="f-attr-value">with value (empty = any value)</label><input id="f-attr-value" type="text" placeholder="gold"></div>
+          <div><label for="f-sample">Sample %</label><input id="f-sample" type="number" min="1" max="100" value="100"></div>
+        </div>
+        <label>Channels</label>
+        <div class="checks" id="f-channels">
+          <label><input type="checkbox" value="voice" checked> Voice (IVR after the call)</label>
+          <label><input type="checkbox" value="chat" checked> In chat</label>
+          <label><input type="checkbox" value="sms" checked> SMS link</label>
+          <label><input type="checkbox" value="email" checked> Email link</label>
+          <label><input type="checkbox" value="web" checked> Web link</label>
+        </div>
+        <h3 style="margin-top:1rem">Questions <span class="muted" style="font-weight:400">(up to 10; shorter surveys get answered)</span></h3>
+        <label for="f-intro">Intro</label><textarea id="f-intro" maxlength="400"></textarea>
+        <div id="questions"></div>
+        <div class="row"><button type="button" class="btn ghost small" id="add-q">Add question</button></div>
+        <label for="f-outro">Closing</label><textarea id="f-outro" maxlength="400"></textarea>
+        <h3 style="margin-top:1rem">Low score</h3>
+        <div class="row">
+          <label style="margin:0"><input type="checkbox" id="f-low-enabled" checked> Open a follow-up Task and flag the response when</label>
+          <select id="f-low-question" style="width:auto"><option value="any">any scored answer</option></select>
+          <span>is at or below</span>
+          <select id="f-low-threshold" style="width:auto"><option>1</option><option selected>2</option><option>3</option></select>
+          <span class="muted">on a 1-5 scale</span>
+        </div>
+        <div class="row end" style="margin-top:1rem"><span class="muted" id="saved-at"></span><button type="submit" class="btn">Save survey</button></div>
+      </form>
+    </div>
+  </section>
+
+  <section id="settings" class="grid two hidden">
+    <div class="card">
+      <h2>Settings</h2>
+      <p class="muted">Changes apply to the next contact. Secrets are stored in your account and shown masked.</p>
+      <nav class="list" aria-label="Settings sections" id="settings-nav"></nav>
+    </div>
+    <div>
+      <form class="card" id="s-closed">
+        <h2>Closed loop</h2>
+        <p class="muted">A low score opens an Amazon Connect Task with the answers and a link to the contact, so someone follows up while it matters.</p>
+        <label><input type="checkbox" id="cl-enabled" checked> Open a Task on a low score</label>
+        <label for="cl-flow">Task flow ID</label><input id="cl-flow" type="text" placeholder="the flow that routes the Task to a supervisor queue"><p class="muted">In the Connect console open the flow you want to receive the Tasks and copy the ID from its ARN (the part after <code>contact-flow/</code>).</p>
+        <label for="cl-instance">Connect instance ID</label><input id="cl-instance" type="text" placeholder="only if the stack was deployed without it">
+        <label for="cl-attr">Contact attribute for the agent score</label><input id="cl-attr" type="text" value="csat"><p class="muted">Written onto the contact when a survey completes, with <code>surveycx_five</code>, <code>surveycx_nps</code>, <code>surveycx_ces</code> and <code>surveycx_low</code>. Arena reads <code>csat</code> from contact records.</p>
+        <div class="row end"><button class="btn" type="submit">Save</button></div>
+      </form>
+      <form class="card" id="s-delivery" style="margin-top:1rem">
+        <h2>Invitations by SMS and email</h2>
+        <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr))">
+          <div><label for="d-freq">Frequency cap (days)</label><input id="d-freq" type="number" min="0" max="365"><p class="muted">Do not invite the same phone or email again within this many days.</p></div>
+          <div><label for="d-qs">Send window starts (hour)</label><input id="d-qs" type="number" min="0" max="23"></div>
+          <div><label for="d-qe">Send window ends (hour)</label><input id="d-qe" type="number" min="1" max="24"><p class="muted">In the stack's time zone. Sends outside the window wait for the morning.</p></div>
+          <div><label for="d-rem">Reminder after (hours, 0 = none)</label><input id="d-rem" type="number" min="0" max="168"></div>
+        </div>
+        <div class="grid" style="grid-template-columns:1fr 1fr">
+          <div><label for="d-sms-from">SMS origination identity</label><input id="d-sms-from" type="text" placeholder="+15550000000, sender ID or pool ARN"></div>
+          <div><label for="d-email-from">Email sender (verified in SES)</label><input id="d-email-from" type="email" placeholder="care@yourcompany.com"></div>
+        </div>
+        <label for="d-sms-text">SMS text</label><textarea id="d-sms-text" maxlength="300"></textarea>
+        <label for="d-email-subject">Email subject</label><input id="d-email-subject" type="text" maxlength="120">
+        <label for="d-email-text">Email text</label><textarea id="d-email-text" maxlength="1500"></textarea>
+        <p class="muted"><code>{link}</code> is the survey link, <code>{brand}</code> the company name. Keep "Reply STOP to opt out" in the SMS.</p>
+        <div class="row end"><button class="btn" type="submit">Save</button></div>
+      </form>
+      <form class="card" id="s-arena" style="margin-top:1rem">
+        <h2>Arena</h2>
+        <p class="muted">Send each agent-attributable score to Arena for Amazon Connect as CSAT_RECEIVED. In Arena, create an ingest key from the Data button and paste the site URL and key here.</p>
+        <label for="a-url">Arena site URL</label><input id="a-url" type="url" placeholder="https://d1234.cloudfront.net/api">
+        <label for="a-key">Ingest key</label><input id="a-key" type="text" autocomplete="off" placeholder="ik_…">
+        <div class="row"><label for="a-test-agent" style="margin:0">Test with agent id</label><input id="a-test-agent" type="text" style="width:auto;flex:1" placeholder="arn:aws:connect:…:agent/…"><button type="button" class="btn ghost" id="a-test">Send test score</button></div>
+        <div class="row end"><button class="btn" type="submit">Save</button></div>
+      </form>
+      <form class="card" id="s-brand" style="margin-top:1rem">
+        <h2>Brand</h2>
+        <p class="muted">Shown on the web survey and in emails. Leave the name empty to show "SurveyCX".</p>
+        <div class="grid" style="grid-template-columns:1fr 100px 1fr">
+          <div><label for="b-name">Company name</label><input id="b-name" type="text" maxlength="60"></div>
+          <div><label for="b-accent">Accent</label><input id="b-accent" type="color" value="#0f766e"></div>
+          <div><label for="b-logo">Logo URL (https)</label><input id="b-logo" type="url" placeholder="https://…/logo.png"></div>
+        </div>
+        <div class="row end"><button class="btn" type="submit">Save</button></div>
+      </form>
+      <div class="card" id="s-keys" style="margin-top:1rem">
+        <h2>Other platforms and BI tools <button type="button" class="btn small" id="new-key">New key</button></h2>
+        <p class="muted">An <b>ingest key</b> lets Genesys, another platform or your middleware report finished contacts (<code>POST /api/ingest/&lt;key&gt;/contacts</code>) or answers collected elsewhere (<code>/responses</code>). A <b>data key</b> gives read-only access to responses for a warehouse (<code>GET /api/data/&lt;key&gt;/responses?from&amp;to</code>). A key is shown once when created.</p>
+        <ul class="list" id="key-list"></ul>
+      </div>
+      <form class="card" id="s-privacy" style="margin-top:1rem">
+        <h2>Privacy requests</h2>
+        <p class="muted">Delete everything stored about a customer or a contact. Deleting by phone or email also stops future invitations.</p>
+        <div class="row"><input id="p-value" type="text" style="flex:1;width:auto" placeholder="+15550100100, name@example.com or a contact id"><button class="btn danger" type="submit">Delete</button></div>
+      </form>
+    </div>
+  </section>
+</main>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<script src="config.js"></script>
+<script src="surveycx-core.js"></script>
+<script src="surveycx-auth.js"></script>
+<script src="common.js"></script>
+<script>
+(async function () {
+  const { esc, toast, api, applyBrand, fmt, viewer, ready } = App;
+  await ready();
+  const me = viewer();
+  if (!me.supervisor) document.getElementById('not-sup').classList.remove('hidden');
+  const $ = (id) => document.getElementById(id);
+  const TYPE_NAMES = { rating: 'Rating 1-5 (CSAT)', nps: 'NPS 0-10', ces: 'Effort 1-7 (CES)', yesno: 'Yes / no', choice: 'Multiple choice', text: 'Free text' };
+
+  // ---------- tabs ----------
+  const show = (which) => { $('surveys').classList.toggle('hidden', which !== 'surveys'); $('settings').classList.toggle('hidden', which !== 'settings'); $('tab-surveys').setAttribute('aria-pressed', which === 'surveys'); $('tab-settings').setAttribute('aria-pressed', which === 'settings'); if (which === 'settings') loadSettings(); };
+  $('tab-surveys').onclick = () => show('surveys'); $('tab-settings').onclick = () => show('settings');
+  if (location.hash === '#settings') show('settings');
+
+  // ---------- surveys ----------
+  let surveys = [], current = null;
+  async function loadSurveys() {
+    surveys = (await api('GET', '/surveys')).surveys.sort((a, b) => a.name.localeCompare(b.name));
+    $('survey-list').innerHTML = surveys.map((s) => `<li><div><button type="button" class="link" data-id="${esc(s.id)}">${esc(s.name)}</button><div class="muted">${s.target.queues.length ? 'Queues: ' + esc(s.target.queues.join(', ')) : s.target.attribute ? 'Attribute ' + esc(s.target.attribute.name) + (s.target.attribute.value ? ' = ' + esc(s.target.attribute.value) : '') : 'Default for any contact'} · ${s.questions.length} question${s.questions.length === 1 ? '' : 's'} · ${esc(s.target.channels.join(', '))}</div></div><span class="pill ${s.status}">${s.status}</span></li>`).join('') || '<li class="muted">No surveys yet. Create one.</li>';
+    $('survey-list').querySelectorAll('button[data-id]').forEach((b) => { b.onclick = () => edit(surveys.find((s) => s.id === b.dataset.id)); });
+  }
+  function edit(s) {
+    current = s;
+    $('editor').hidden = false; $('editor-title').textContent = s.id ? s.name : 'New survey'; $('delete-survey').classList.toggle('hidden', !s.id);
+    $('f-name').value = s.name || ''; $('f-status').value = s.status || 'active'; $('f-language').value = s.language || 'en-US';
+    $('f-queues').value = (s.target && s.target.queues || []).join(', '); $('f-attr-name').value = s.target && s.target.attribute ? s.target.attribute.name : ''; $('f-attr-value').value = s.target && s.target.attribute ? s.target.attribute.value : ''; $('f-sample').value = s.target && s.target.sample || 100;
+    $('f-channels').querySelectorAll('input').forEach((c) => { c.checked = !s.target || !s.target.channels || s.target.channels.includes(c.value); });
+    $('f-intro').value = s.intro || ''; $('f-outro').value = s.outro || '';
+    $('questions').innerHTML = ''; (s.questions || []).forEach(addQuestion);
+    $('f-low-enabled').checked = !s.lowScore || s.lowScore.enabled !== false; $('f-low-threshold').value = s.lowScore ? s.lowScore.threshold : 2; refreshLowQuestions(s.lowScore ? s.lowScore.question : 'any');
+    $('saved-at').textContent = s.updatedAt ? 'Saved ' + fmt.when(s.updatedAt) + (s.updatedBy ? ' by ' + s.updatedBy : '') : '';
+    $('f-name').focus();
+  }
+  function addQuestion(q) {
+    q = q || { type: 'rating', text: '', required: true };
+    const i = $('questions').children.length;
+    const div = document.createElement('div'); div.className = 'q';
+    div.innerHTML = `<div class="head"><b>Question ${i + 1}</b><span class="row"><button type="button" class="btn ghost small up" aria-label="Move up">↑</button><button type="button" class="btn ghost small down" aria-label="Move down">↓</button><button type="button" class="btn danger small rm">Remove</button></span></div>
+      <div class="grid" style="grid-template-columns:200px 1fr 160px">
+        <div><label>Type<select class="q-type">${Object.keys(TYPE_NAMES).map((t) => `<option value="${t}" ${t === q.type ? 'selected' : ''}>${TYPE_NAMES[t]}</option>`).join('')}</select></label></div>
+        <div><label>Question text<input type="text" class="q-text" maxlength="400" required value="${esc(q.text)}"></label></div>
+        <div><label>Driver (report label)<input type="text" class="q-driver" maxlength="60" placeholder="e.g. Wait time" value="${esc(q.driver || '')}"></label></div>
+      </div>
+      <div class="q-options" ${q.type === 'choice' ? '' : 'hidden'}><label>Options, one per line (2 to 9)<textarea class="q-opts">${esc((q.options || []).join('\n'))}</textarea></label></div>
+      <div class="checks"><label><input type="checkbox" class="q-agent" ${q.agentAttributable ? 'checked' : ''}> Counts for the agent (agent report and Arena)</label><label><input type="checkbox" class="q-required" ${q.required !== false ? 'checked' : ''}> Required</label>
+      <label>Ask only when <select class="q-skip-q" style="width:auto"><option value="">always</option></select> <span class="q-skip-rest">is at most <input type="number" class="q-skip-v" style="width:4.5rem" min="0" max="10" value="${q.skipUnless ? q.skipUnless.atMost : 3}"></span></label></div>
+      <input type="hidden" class="q-id" value="${esc(q.id || '')}">`;
+    div.querySelector('.q-type').onchange = (e) => { div.querySelector('.q-options').hidden = e.target.value !== 'choice'; div.querySelector('.q-agent').checked = e.target.value === 'rating'; div.querySelector('.q-agent').disabled = e.target.value === 'text' || e.target.value === 'choice'; refreshLowQuestions(); refreshSkips(); };
+    div.querySelector('.q-agent').disabled = q.type === 'text' || q.type === 'choice';
+    div.querySelector('.rm').onclick = () => { div.remove(); renumber(); };
+    div.querySelector('.up').onclick = () => { if (div.previousElementSibling) div.parentNode.insertBefore(div, div.previousElementSibling); renumber(); };
+    div.querySelector('.down').onclick = () => { if (div.nextElementSibling) div.parentNode.insertBefore(div.nextElementSibling, div); renumber(); };
+    div.querySelector('.q-text').oninput = () => { refreshLowQuestions(); refreshSkips(); };
+    div.dataset.skip = q.skipUnless ? q.skipUnless.question : '';
+    $('questions').appendChild(div); renumber();
+  }
+  const qDivs = () => [...$('questions').children];
+  function qLabel(div, i) { const t = div.querySelector('.q-text').value.trim(); return `${i + 1}. ${t ? t.slice(0, 50) : '(untitled)'}`; }
+  function renumber() { qDivs().forEach((d, i) => { d.querySelector('.head b').textContent = 'Question ' + (i + 1); }); refreshLowQuestions(); refreshSkips(); }
+  function refreshLowQuestions(selected) {
+    const sel = $('f-low-question'), cur = selected || sel.value;
+    sel.innerHTML = '<option value="any">any scored answer</option>' + qDivs().map((d, i) => ({ d, i })).filter(({ d }) => !['text', 'choice'].includes(d.querySelector('.q-type').value)).map(({ d, i }) => `<option value="${esc(d.querySelector('.q-id').value || '__' + i)}">${esc(qLabel(d, i))}</option>`).join('');
+    sel.value = [...sel.options].some((o) => o.value === cur) ? cur : 'any';
+  }
+  function refreshSkips() {
+    qDivs().forEach((d, i) => {
+      const sel = d.querySelector('.q-skip-q'), cur = sel.value || d.dataset.skip || '';
+      sel.innerHTML = '<option value="">always</option>' + qDivs().slice(0, i).filter((p) => !['text', 'choice'].includes(p.querySelector('.q-type').value)).map((p) => `<option value="${esc(p.querySelector('.q-id').value || '__' + qDivs().indexOf(p))}">${esc(qLabel(p, qDivs().indexOf(p)))}</option>`).join('');
+      sel.value = [...sel.options].some((o) => o.value === cur) ? cur : ''; d.dataset.skip = sel.value;
+      d.querySelector('.q-skip-rest').style.visibility = sel.value ? 'visible' : 'hidden';
+      sel.onchange = () => { d.dataset.skip = sel.value; d.querySelector('.q-skip-rest').style.visibility = sel.value ? 'visible' : 'hidden'; };
+    });
+  }
+  /** Read the form into a survey. New questions get ids now so skip rules and the low-score rule can point at them. */
+  function readForm() {
+    const divs = qDivs();
+    const ids = divs.map((d, i) => d.querySelector('.q-id').value || ('q' + (i + 1) + '-' + Math.random().toString(36).slice(2, 6)));
+    const resolve = (v) => (v && v.startsWith('__') ? ids[+v.slice(2)] : v);
+    const questions = divs.map((d, i) => { const type = d.querySelector('.q-type').value; const skip = resolve(d.querySelector('.q-skip-q').value); return { id: ids[i], type, text: d.querySelector('.q-text').value, driver: d.querySelector('.q-driver').value, agentAttributable: d.querySelector('.q-agent').checked, required: d.querySelector('.q-required').checked, options: type === 'choice' ? d.querySelector('.q-opts').value.split('\n').map((x) => x.trim()).filter(Boolean) : undefined, skipUnless: skip ? { question: skip, atMost: +d.querySelector('.q-skip-v').value } : undefined }; });
+    const attrName = $('f-attr-name').value.trim();
+    return { id: current && current.id, name: $('f-name').value, status: $('f-status').value, language: $('f-language').value, intro: $('f-intro').value, outro: $('f-outro').value,
+      target: { queues: $('f-queues').value.split(',').map((x) => x.trim()).filter(Boolean), attribute: attrName ? { name: attrName, value: $('f-attr-value').value.trim() } : null, channels: [...$('f-channels').querySelectorAll('input:checked')].map((c) => c.value), sample: +$('f-sample').value || 100 },
+      questions, lowScore: { enabled: $('f-low-enabled').checked, threshold: +$('f-low-threshold').value, question: resolve($('f-low-question').value) } };
+  }
+  $('survey-form').onsubmit = async (e) => {
+    e.preventDefault();
+    const body = readForm();
+    try { SurveyCX.normalizeSurvey(body); } catch (err) { toast(err.message, true); return; }
+    try {
+      const r = current && current.id ? await api('PUT', '/surveys/' + encodeURIComponent(current.id), body) : await api('POST', '/surveys', body);
+      toast('Survey saved'); await loadSurveys(); edit(r.survey);
+    } catch (err) { toast(err.message, true); }
+  };
+  $('new-survey').onclick = () => edit(Object.assign({}, SurveyCX.DEFAULT_SURVEY, { id: undefined, name: '', target: { queues: [], attribute: null, channels: SurveyCX.CHANNELS, sample: 100 } }));
+  $('add-q').onclick = () => addQuestion();
+  $('delete-survey').onclick = async () => { if (!current || !current.id || !confirm('Delete "' + current.name + '"? Responses already collected are kept.')) return; await api('DELETE', '/surveys/' + encodeURIComponent(current.id)); toast('Deleted'); $('editor').hidden = true; current = null; await loadSurveys(); };
+  $('preview').onclick = () => { try { const s = SurveyCX.normalizeSurvey(readForm()); sessionStorage.setItem('surveycx.preview', JSON.stringify(s)); window.open('survey.html#preview', '_blank'); } catch (err) { toast(err.message, true); } };
+
+  // ---------- settings ----------
+  let settings = null;
+  async function loadSettings() {
+    if (!me.supervisor) return;
+    settings = (await api('GET', '/settings')).settings;
+    const cl = settings.closedLoop, d = settings.delivery, a = settings.arena, b = settings.brand;
+    $('cl-enabled').checked = cl.enabled !== false; $('cl-flow').value = cl.taskFlowId || ''; $('cl-instance').value = settings.connectInstanceId || ''; $('cl-attr').value = cl.attribute || 'csat';
+    $('d-freq').value = d.frequencyDays; $('d-qs').value = d.quietStart; $('d-qe').value = d.quietEnd; $('d-rem').value = d.reminderHours; $('d-sms-from').value = d.smsOrigination || ''; $('d-email-from').value = d.emailFrom || ''; $('d-sms-text').value = d.smsText; $('d-email-subject').value = d.emailSubject; $('d-email-text').value = d.emailText;
+    $('a-url').value = a.ingestUrl || ''; $('a-key').value = a.key || '';
+    $('b-name').value = b.name || ''; $('b-accent').value = b.accent || '#0f766e'; $('b-logo').value = b.logoUrl || '';
+    applyBrand(b);
+    await loadKeys();
+    $('settings-nav').innerHTML = ['s-closed:Closed loop', 's-delivery:Invitations', 's-arena:Arena', 's-brand:Brand', 's-keys:Other platforms and BI', 's-privacy:Privacy requests'].map((x) => { const [id, label] = x.split(':'); return `<a href="#${id}" style="display:block;padding:.4rem .2rem;border-top:1px solid var(--line);text-decoration:none;color:var(--ink)">${label}</a>`; }).join('');
+  }
+  const save = async (patch, msg) => { try { settings = (await api('PUT', '/settings', patch)).settings; toast(msg || 'Saved'); applyBrand(settings.brand); } catch (err) { toast(err.message, true); } };
+  $('s-closed').onsubmit = (e) => { e.preventDefault(); save({ closedLoop: { enabled: $('cl-enabled').checked, taskFlowId: $('cl-flow').value.trim(), attribute: $('cl-attr').value.trim() || 'csat' }, connectInstanceId: $('cl-instance').value.trim() }); };
+  $('s-delivery').onsubmit = (e) => { e.preventDefault(); save({ delivery: { frequencyDays: +$('d-freq').value, quietStart: +$('d-qs').value, quietEnd: +$('d-qe').value, reminderHours: +$('d-rem').value, smsOrigination: $('d-sms-from').value.trim(), emailFrom: $('d-email-from').value.trim(), smsText: $('d-sms-text').value, emailSubject: $('d-email-subject').value, emailText: $('d-email-text').value } }); };
+  $('s-arena').onsubmit = (e) => { e.preventDefault(); save({ arena: { ingestUrl: $('a-url').value.trim(), key: $('a-key').value.trim() } }); };
+  $('a-test').onclick = async () => { try { await api('POST', '/settings/arena/test', { agent: $('a-test-agent').value.trim() }); toast('Arena accepted a test score of 5'); } catch (err) { toast(err.message, true); } };
+  $('s-brand').onsubmit = (e) => { e.preventDefault(); save({ brand: { name: $('b-name').value.trim(), accent: $('b-accent').value, logoUrl: $('b-logo').value.trim() } }); };
+  async function loadKeys() {
+    const { keys } = await api('GET', '/keys');
+    $('key-list').innerHTML = keys.map((k) => `<li><div><b>${esc(k.label)}</b> <span class="pill">${k.kind}</span><div class="muted">${esc(k.key)} · created ${fmt.day(k.createdAt)} by ${esc(k.createdBy)} · expires ${fmt.day(k.expiresAt)}</div></div><button type="button" class="btn danger small" data-key="${esc(k.id)}">Revoke</button></li>`).join('') || '<li class="muted">No keys.</li>';
+    $('key-list').querySelectorAll('button[data-key]').forEach((b) => { b.onclick = async () => { if (!confirm('Revoke this key? Anything using it stops working.')) return; await api('DELETE', '/keys/' + encodeURIComponent(b.dataset.key)); loadKeys(); }; });
+  }
+  $('new-key').onclick = async () => {
+    const kind = prompt('Key type: "ingest" (another platform reports contacts or answers) or "data" (read-only for BI)', 'ingest'); if (!kind) return;
+    const label = prompt('Label (e.g. Genesys production, Power BI)', kind === 'data' ? 'Warehouse' : 'Platform connector'); if (label === null) return;
+    const r = await api('POST', '/keys', { kind, label });
+    prompt('Copy this key now; it will not be shown again:', r.key);
+    loadKeys();
+  };
+  $('s-privacy').onsubmit = async (e) => {
+    e.preventDefault(); const v = $('p-value').value.trim(); if (!v) return;
+    if (!confirm('Delete every response for ' + v + '? This cannot be undone.')) return;
+    const body = v.includes('@') ? { email: v } : /^\+?[\d\s()-]{7,}$/.test(v) ? { phone: v } : { contactId: v };
+    try { const r = await api('POST', '/privacy/delete', body); toast(`Removed ${r.removed} response${r.removed === 1 ? '' : 's'}${r.optedOut ? ' and opted the customer out' : ''}`); $('p-value').value = ''; } catch (err) { toast(err.message, true); }
+  };
+
+  try { await loadSurveys(); const st = await api('GET', '/settings'); applyBrand(st.settings.brand); } catch (err) { toast(err.message, true); }
+})();
+</script>
+</body>
+</html>

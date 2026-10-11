@@ -1,0 +1,625 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: SurveyCX for Amazon Connect. Post-contact surveys on the IVR, in chat, by SMS and email, with results by agent, queue and driver. Deploys into the customer's own account.
+
+Parameters:
+  ConnectInstanceId:
+    Type: String
+    Default: ''
+    Description: ID (not ARN) of your Amazon Connect instance. Needed to write scores back onto contacts and to open low-score Tasks. Leave empty on other platforms.
+  ConnectInstanceUrl:
+    Type: String
+    Default: ''
+    Description: Access URL of the Connect instance, e.g. https://myinstance.my.connect.aws. Used for links from low-score Tasks to the contact, and to allow the agent workspace to frame the pages.
+  ShardCount:
+    Type: Number
+    Default: 1
+    Description: Shards on the contact record stream. One handles thousands of contacts a minute.
+  SmsOrigination:
+    Type: String
+    Default: ''
+    Description: Optional. Phone number, sender ID or pool ARN in AWS End User Messaging that SMS invitations are sent from. Leave empty to skip SMS (it can also be set in the console).
+  InboundSmsTopicArn:
+    Type: String
+    Default: ''
+    Description: Optional. SNS topic AWS End User Messaging delivers inbound SMS to, so STOP replies opt the customer out.
+  EmailFrom:
+    Type: String
+    Default: ''
+    Description: Optional. A sender address or domain verified in Amazon SES that email invitations are sent from. Leave empty to skip email (it can also be set in the console).
+  EmailAttribute:
+    Type: String
+    Default: email
+    Description: Contact attribute your flows store the customer's email address in, for email invitations.
+  Timezone:
+    Type: String
+    Default: UTC
+    Description: IANA time zone the contact centre runs on, e.g. America/New_York. Decides the quiet-hour send window and the day a response counts on.
+  RetentionDays:
+    Type: Number
+    Default: 400
+    MinValue: 30
+    Description: Days survey responses are kept before DynamoDB removes them.
+  Provider:
+    Type: String
+    Default: connect
+    AllowedValues: [connect, generic]
+    Description: Which platform feeds this stack. connect reads Amazon Connect contact records and runs the flow module. generic expects finished contacts through the ingest endpoint (Genesys or any other platform).
+  Partner:
+    Type: String
+    Default: ''
+    Description: Optional partner or reseller tag recorded on the stack's health response and usage reports.
+  AuthMode:
+    Type: String
+    Default: cognito
+    AllowedValues: [cognito, external]
+    Description: cognito creates a user pool in this stack (default). external uses JwtIssuer/JwtAudience from the customer's IdP.
+  JwtIssuer:
+    Type: String
+    Default: ''
+  JwtAudience:
+    Type: String
+    Default: ''
+  AllowedOrigin:
+    Type: String
+    Default: '*'
+  MarketplaceTrialDays:
+    Type: Number
+    Default: 30
+    MinValue: 0
+    Description: Free trial length in days from the first usage report. During the trial the first MarketplaceTrialResponses completed responses each day are not billed.
+  MarketplaceTrialResponses:
+    Type: Number
+    Default: 500
+    MinValue: 0
+  MarketplaceProductCode:
+    Type: String
+    Default: ''
+    Description: Set by the AWS Marketplace listing. When present, a nightly job reports completed responses (responses dimension). Leave empty for pilots and direct deals.
+  MarketplaceLicenseArn:
+    Type: String
+    Default: ''
+    Description: Filled in automatically when you launch from the SurveyCX registration page.
+  MarketplaceCustomerAccountId:
+    Type: String
+    Default: ''
+    Description: Filled in automatically from the registration page.
+  SiteArchiveUrl:
+    Type: String
+    Default: ''
+    Description: HTTPS URL of the site.zip for this release. Filled in by the release build.
+  AlarmEmail:
+    Type: String
+    Default: ''
+    Description: Email address that receives operational alarms. Leave empty to create the alarms without a subscription.
+
+Conditions:
+  UseCognito: !Equals [!Ref AuthMode, cognito]
+  OnConnect: !Not [!Equals [!Ref ConnectInstanceId, '']]
+  PinInstance: !Not [!Equals [!Ref ConnectInstanceUrl, '']]
+  OnMarketplace: !Not [!Equals [!Ref MarketplaceProductCode, '']]
+  HasAlarmEmail: !Not [!Equals [!Ref AlarmEmail, '']]
+  InstallSite: !Not [!Equals [!Ref SiteArchiveUrl, '']]
+  HasInboundSms: !Not [!Equals [!Ref InboundSmsTopicArn, '']]
+
+Globals:
+  Function:
+    Runtime: nodejs22.x
+    Architectures: [arm64]
+    MemorySize: 256
+    Timeout: 15
+    Environment:
+      Variables:
+        TABLE: !Ref Table
+        SURVEYCX_TZ: !Ref Timezone
+        RETENTION_DAYS: !Ref RetentionDays
+        CONNECT_INSTANCE_ID: !Ref ConnectInstanceId
+        CONNECT_INSTANCE_URL: !Ref ConnectInstanceUrl
+        SITE_URL: !Sub https://${Distribution.DomainName}
+        PROVIDER: !Ref Provider
+        PARTNER: !Ref Partner
+
+Resources:
+  ContactRecordStream:
+    Type: AWS::Kinesis::Stream
+    Properties:
+      Name: !Sub surveycx-contact-records-${AWS::StackName}
+      ShardCount: !Ref ShardCount
+      RetentionPeriodHours: 24
+      StreamEncryption: { EncryptionType: KMS, KeyId: alias/aws/kinesis }
+
+  Table:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub surveycx-${AWS::StackName}
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - { AttributeName: pk, AttributeType: S }
+        - { AttributeName: sk, AttributeType: S }
+        - { AttributeName: gsi1pk, AttributeType: S }
+        - { AttributeName: gsi1sk, AttributeType: S }
+      KeySchema:
+        - { AttributeName: pk, KeyType: HASH }
+        - { AttributeName: sk, KeyType: RANGE }
+      GlobalSecondaryIndexes:
+        - IndexName: gsi1
+          KeySchema:
+            - { AttributeName: gsi1pk, KeyType: HASH }
+            - { AttributeName: gsi1sk, KeyType: RANGE }
+          Projection: { ProjectionType: ALL }
+      TimeToLiveSpecification: { AttributeName: ttl, Enabled: true }
+      PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true }
+      SSESpecification: { SSEEnabled: true }
+
+  ConnectPolicy:
+    # Shared by the functions that talk to Amazon Connect: write scores onto contacts and open Tasks.
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action: [connect:UpdateContactAttributes, connect:StartTaskContact, connect:DescribeContact]
+            Resource: !Sub arn:aws:connect:${AWS::Region}:${AWS::AccountId}:instance/*
+          - Effect: Allow
+            Action: events:PutEvents
+            Resource: !Sub arn:aws:events:${AWS::Region}:${AWS::AccountId}:event-bus/default
+
+  FlowFunction:
+    # Invoked by the Connect flow module in the disconnect flow (IVR and in-chat surveys).
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub surveycx-flow-${AWS::StackName}
+      CodeUri: src/            # per function: aws cloudformation package ignores Globals.CodeUri
+      Handler: flow.handler
+      Timeout: 8
+      Policies:
+        - DynamoDBCrudPolicy: { TableName: !Ref Table }
+        - !Ref ConnectPolicy
+
+  FlowInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref FlowFunction
+      Action: lambda:InvokeFunction
+      Principal: connect.amazonaws.com
+      SourceAccount: !Ref AWS::AccountId
+
+  IngestFunction:
+    # Contact records: fills in the agent on IVR/chat responses, queues SMS and email invitations.
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub surveycx-ingest-${AWS::StackName}
+      CodeUri: src/            # per function: aws cloudformation package ignores Globals.CodeUri
+      Handler: ingest.handler
+      Timeout: 60
+      Environment:
+        Variables:
+          EMAIL_ATTRIBUTE: !Ref EmailAttribute
+      Policies:
+        - DynamoDBCrudPolicy: { TableName: !Ref Table }
+        - KinesisStreamReadPolicy: { StreamName: !Ref ContactRecordStream }
+        - !Ref ConnectPolicy
+      Events:
+        Stream:
+          Type: Kinesis
+          Properties:
+            Stream: !GetAtt ContactRecordStream.Arn
+            StartingPosition: LATEST
+            BatchSize: 100
+            MaximumBatchingWindowInSeconds: 5
+            BisectBatchOnFunctionError: true
+            MaximumRetryAttempts: 3
+            FunctionResponseTypes: [ReportBatchItemFailures]
+
+  SenderFunction:
+    # Drains the outbox every five minutes: SMS through AWS End User Messaging, email through SES, inside the quiet-hour window.
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub surveycx-sender-${AWS::StackName}
+      CodeUri: src/            # per function: aws cloudformation package ignores Globals.CodeUri
+      Handler: delivery.handler
+      Timeout: 300
+      Environment:
+        Variables:
+          SMS_ORIGINATION: !Ref SmsOrigination
+          EMAIL_FROM: !Ref EmailFrom
+      Policies:
+        - DynamoDBCrudPolicy: { TableName: !Ref Table }
+        - Statement:
+            - Effect: Allow
+              Action: [sms-voice:SendTextMessage, ses:SendEmail]
+              Resource: '*'
+      Events:
+        Schedule:
+          Type: Schedule
+          Properties:
+            Schedule: rate(5 minutes)
+            Description: Send queued SurveyCX invitations and reminders
+
+  OptoutFunction:
+    Type: AWS::Serverless::Function
+    Condition: HasInboundSms
+    Properties:
+      FunctionName: !Sub surveycx-optout-${AWS::StackName}
+      CodeUri: src/            # per function: aws cloudformation package ignores Globals.CodeUri
+      Handler: optout.handler
+      Policies:
+        - DynamoDBCrudPolicy: { TableName: !Ref Table }
+      Events:
+        Inbound:
+          Type: SNS
+          Properties:
+            Topic: !Ref InboundSmsTopicArn
+
+  MeteringFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub surveycx-metering-${AWS::StackName}
+      CodeUri: src/            # per function: aws cloudformation package ignores Globals.CodeUri
+      Handler: metering.handler
+      Timeout: 120
+      Environment:
+        Variables:
+          PRODUCT_CODE: !Ref MarketplaceProductCode
+          LICENSE_ARN: !Ref MarketplaceLicenseArn
+          CUSTOMER_ACCOUNT_ID: !Ref MarketplaceCustomerAccountId
+          USAGE_DIMENSION: responses
+          TRIAL_DAYS: !Ref MarketplaceTrialDays
+          TRIAL_RESPONSES: !Ref MarketplaceTrialResponses
+      Policies:
+        - DynamoDBCrudPolicy: { TableName: !Ref Table }
+        - Statement:
+            - Effect: Allow
+              Action: [aws-marketplace:MeterUsage, aws-marketplace:BatchMeterUsage]
+              Resource: '*'
+      Events:
+        Nightly:
+          Type: Schedule
+          Properties:
+            Schedule: cron(15 * * * ? *)   # hourly; reports once per local day, after local midnight
+            Description: Report completed survey responses to AWS Marketplace
+
+  ApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub surveycx-api-${AWS::StackName}
+      CodeUri: src/            # per function: aws cloudformation package ignores Globals.CodeUri
+      Handler: api.handler
+      Environment:
+        Variables:
+          ALLOWED_ORIGIN: !Ref AllowedOrigin
+      Policies:
+        - DynamoDBCrudPolicy: { TableName: !Ref Table }
+        - !Ref ConnectPolicy
+      Events:
+        WebSurvey:
+          Type: HttpApi
+          Properties: { ApiId: !Ref Api, Path: '/s/{token}', Method: GET, Auth: { Authorizer: NONE } }   # the token is the credential
+        WebAnswers:
+          Type: HttpApi
+          Properties: { ApiId: !Ref Api, Path: '/s/{token}/answers', Method: POST, Auth: { Authorizer: NONE } }
+        WebOptout:
+          Type: HttpApi
+          Properties: { ApiId: !Ref Api, Path: '/s/{token}/optout', Method: POST, Auth: { Authorizer: NONE } }
+        IngestContacts:
+          Type: HttpApi
+          Properties: { ApiId: !Ref Api, Path: '/ingest/{key}/contacts', Method: POST, Auth: { Authorizer: NONE } }   # the ingest key is the credential
+        IngestResponses:
+          Type: HttpApi
+          Properties: { ApiId: !Ref Api, Path: '/ingest/{key}/responses', Method: POST, Auth: { Authorizer: NONE } }
+        Data:
+          Type: HttpApi
+          Properties: { ApiId: !Ref Api, Path: '/data/{key}/responses', Method: GET, Auth: { Authorizer: NONE } }   # the data key is the credential; read-only
+        Health:
+          Type: HttpApi
+          Properties: { ApiId: !Ref Api, Path: /health, Method: GET, Auth: { Authorizer: NONE } }
+        Any:
+          Type: HttpApi
+          Properties: { ApiId: !Ref Api, Path: '/{proxy+}', Method: ANY }
+
+  Api:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      CorsConfiguration:
+        AllowOrigins: [!Ref AllowedOrigin]
+        AllowMethods: [GET, PUT, POST, DELETE, OPTIONS]
+        AllowHeaders: [content-type, authorization]
+      Auth:
+        DefaultAuthorizer: Jwt
+        Authorizers:
+          Jwt:
+            IdentitySource: $request.header.Authorization
+            JwtConfiguration:
+              issuer: !If [UseCognito, !Sub 'https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}', !Ref JwtIssuer]
+              audience:
+                - !If [UseCognito, !Ref UserPoolClient, !Ref JwtAudience]
+
+  # ---------- Identity ----------
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Condition: UseCognito
+    Properties:
+      UserPoolName: !Sub surveycx-${AWS::StackName}
+      UsernameConfiguration: { CaseSensitive: false }
+      AutoVerifiedAttributes: [email]
+      AdminCreateUserConfig: { AllowAdminCreateUserOnly: true }
+      Policies:
+        PasswordPolicy: { MinimumLength: 12, RequireLowercase: true, RequireUppercase: true, RequireNumbers: true, RequireSymbols: false }
+      Schema:
+        - { Name: email, AttributeDataType: String, Mutable: true, Required: false }
+        - { Name: name, AttributeDataType: String, Mutable: true, Required: false }
+        - { Name: agentArn, AttributeDataType: String, Mutable: true }   # the agent this user is; agents see their own results
+      UserPoolTags: { app: surveycx }
+
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Condition: UseCognito
+    Properties:
+      ClientName: surveycx-pages
+      UserPoolId: !Ref UserPool
+      GenerateSecret: false
+      AllowedOAuthFlowsUserPoolClient: true
+      AllowedOAuthFlows: [code]
+      AllowedOAuthScopes: [openid, email, profile]
+      SupportedIdentityProviders: [COGNITO]
+      CallbackURLs: [http://localhost:8766/console.html, http://localhost:8766/results.html]   # the site installer adds the CloudFront URLs
+      LogoutURLs: [http://localhost:8766/]
+      PreventUserExistenceErrors: ENABLED
+      AccessTokenValidity: 60
+      IdTokenValidity: 60
+      RefreshTokenValidity: 12
+      TokenValidityUnits: { AccessToken: minutes, IdToken: minutes, RefreshToken: hours }
+      ReadAttributes: [email, name, 'custom:agentArn']
+
+  UserPoolDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Condition: UseCognito
+    Properties:
+      UserPoolId: !Ref UserPool
+      Domain: !Sub surveycx-${AWS::StackName}-${AWS::AccountId}
+
+  SupervisorsGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Condition: UseCognito
+    Properties: { UserPoolId: !Ref UserPool, GroupName: supervisors, Description: Build surveys, change settings, see every result }
+
+  AgentsGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Condition: UseCognito
+    Properties: { UserPoolId: !Ref UserPool, GroupName: agents, Description: See their own survey results }
+
+  # ---------- Hosting ----------
+  SiteBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub surveycx-site-${AWS::StackName}-${AWS::AccountId}
+      PublicAccessBlockConfiguration: { BlockPublicAcls: true, BlockPublicPolicy: true, IgnorePublicAcls: true, RestrictPublicBuckets: true }
+      BucketEncryption:
+        ServerSideEncryptionConfiguration: [{ ServerSideEncryptionByDefault: { SSEAlgorithm: AES256 } }]
+
+  SiteBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref SiteBucket
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal: { Service: cloudfront.amazonaws.com }
+            Action: s3:GetObject
+            Resource: !Sub ${SiteBucket.Arn}/*
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub 'arn:aws:cloudfront::${AWS::AccountId}:distribution/${Distribution}'
+
+  SiteAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub surveycx-oac-${AWS::StackName}
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  SiteHeaders:
+    Type: AWS::CloudFront::ResponseHeadersPolicy
+    Properties:
+      ResponseHeadersPolicyConfig:
+        Name: !Sub surveycx-headers-${AWS::StackName}
+        SecurityHeadersConfig:
+          # survey.html is opened by customers from a link; console and results may be framed by the agent workspace.
+          ContentSecurityPolicy:
+            Override: true
+            ContentSecurityPolicy: !If
+              - PinInstance
+              - !Sub "frame-ancestors 'self' ${ConnectInstanceUrl}; default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://*.amazoncognito.com"
+              - "frame-ancestors 'self' https://*.my.connect.aws https://*.awsapps.com; default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://*.amazoncognito.com"
+          ContentTypeOptions: { Override: true }
+          ReferrerPolicy: { Override: true, ReferrerPolicy: strict-origin-when-cross-origin }
+          StrictTransportSecurity: { Override: true, AccessControlMaxAgeSec: 31536000, IncludeSubdomains: true }
+
+  Distribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: !Sub SurveyCX for Amazon Connect (${AWS::StackName})
+        HttpVersion: http2and3
+        PriceClass: PriceClass_100
+        DefaultRootObject: index.html
+        Origins:
+          - Id: site
+            DomainName: !GetAtt SiteBucket.RegionalDomainName
+            OriginAccessControlId: !GetAtt SiteAccessControl.Id
+            S3OriginConfig: { OriginAccessIdentity: '' }
+          - Id: api
+            DomainName: !Sub ${Api}.execute-api.${AWS::Region}.amazonaws.com
+            CustomOriginConfig: { OriginProtocolPolicy: https-only, OriginSSLProtocols: [TLSv1.2] }
+        DefaultCacheBehavior:
+          TargetOriginId: site
+          ViewerProtocolPolicy: redirect-to-https
+          Compress: true
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6          # managed CachingOptimized
+          ResponseHeadersPolicyId: !Ref SiteHeaders
+        CacheBehaviors:
+          - PathPattern: /api/*
+            TargetOriginId: api
+            ViewerProtocolPolicy: https-only
+            AllowedMethods: [GET, HEAD, OPTIONS, PUT, PATCH, POST, DELETE]
+            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad        # managed CachingDisabled
+            OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac # AllViewerExceptHostHeader
+            FunctionAssociations:
+              - EventType: viewer-request
+                FunctionARN: !GetAtt ApiPathRewrite.FunctionMetadata.FunctionARN
+        ViewerCertificate: { CloudFrontDefaultCertificate: true }
+
+  ApiPathRewrite:
+    Type: AWS::CloudFront::Function
+    Properties:
+      Name: !Sub surveycx-api-rewrite-${AWS::StackName}
+      AutoPublish: true
+      FunctionConfig: { Comment: strip /api prefix, Runtime: cloudfront-js-2.0 }
+      FunctionCode: |
+        function handler(event) {
+          var r = event.request;
+          if (r.uri.indexOf('/api/') === 0) r.uri = r.uri.substring(4);
+          return r;
+        }
+
+  SiteDeployerFunction:
+    Type: AWS::Serverless::Function
+    Condition: InstallSite
+    Properties:
+      FunctionName: !Sub surveycx-site-deployer-${AWS::StackName}
+      CodeUri: src/            # per function: aws cloudformation package ignores Globals.CodeUri
+      Handler: site-deployer.handler
+      Timeout: 300
+      MemorySize: 512
+      Policies:
+        - S3CrudPolicy: { BucketName: !Ref SiteBucket }
+        - Statement:
+            - Effect: Allow
+              Action: [cloudfront:CreateInvalidation]
+              Resource: !Sub arn:aws:cloudfront::${AWS::AccountId}:distribution/${Distribution}
+            - Effect: Allow
+              Action: [cognito-idp:UpdateUserPoolClient, cognito-idp:DescribeUserPoolClient]
+              Resource: !If [UseCognito, !GetAtt UserPool.Arn, !Sub 'arn:aws:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/*']
+
+  SiteInstall:
+    Type: Custom::SurveyCXSite
+    Condition: InstallSite
+    Properties:
+      ServiceToken: !GetAtt SiteDeployerFunction.Arn
+      ArchiveUrl: !Ref SiteArchiveUrl
+      Bucket: !Ref SiteBucket
+      DistributionId: !Ref Distribution
+      SiteUrl: !Sub https://${Distribution.DomainName}
+      UserPoolId: !If [UseCognito, !Ref UserPool, '']
+      ClientId: !If [UseCognito, !Ref UserPoolClient, '']
+      AuthDomain: !If [UseCognito, !Sub 'https://surveycx-${AWS::StackName}-${AWS::AccountId}.auth.${AWS::Region}.amazoncognito.com', '']
+
+  # ---------- Operations ----------
+  AlarmTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub surveycx-alarms-${AWS::StackName}
+      DisplayName: SurveyCX alarms
+
+  AlarmSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: HasAlarmEmail
+    Properties: { TopicArn: !Ref AlarmTopic, Protocol: email, Endpoint: !Ref AlarmEmail }
+
+  FlowErrorsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub surveycx-flow-errors-${AWS::StackName}
+      AlarmDescription: The survey flow Lambda is failing; customers hear no survey.
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions: [{ Name: FunctionName, Value: !Ref FlowFunction }]
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlarmTopic]
+      OKActions: [!Ref AlarmTopic]
+
+  IngestErrorsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub surveycx-ingest-errors-${AWS::StackName}
+      AlarmDescription: Contact records are failing to process; invitations are not going out.
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions: [{ Name: FunctionName, Value: !Ref IngestFunction }]
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlarmTopic]
+      OKActions: [!Ref AlarmTopic]
+
+  ApiErrorsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub surveycx-api-errors-${AWS::StackName}
+      AlarmDescription: The SurveyCX API function is throwing.
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions: [{ Name: FunctionName, Value: !Ref ApiFunction }]
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 3
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlarmTopic]
+      OKActions: [!Ref AlarmTopic]
+
+  MeteringAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: OnMarketplace
+    Properties:
+      AlarmName: !Sub surveycx-metering-errors-${AWS::StackName}
+      AlarmDescription: The Marketplace usage report failed. Billing is behind until it succeeds.
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions: [{ Name: FunctionName, Value: !Ref MeteringFunction }]
+      Statistic: Sum
+      Period: 86400
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlarmTopic]
+
+Outputs:
+  SiteUrl:
+    Description: Survey console, results and the hosted web survey live here. The API is under /api.
+    Value: !Sub https://${Distribution.DomainName}
+  FlowLambdaArn:
+    Description: Add this Lambda to your Connect instance, then run `node lambda/flow-module.js <this ARN>` and import the result as a flow module.
+    Value: !GetAtt FlowFunction.Arn
+  StreamArn:
+    Description: Set this as the contact record stream target in the Connect console (Data streaming) for SMS and email invitations and agent attribution.
+    Value: !GetAtt ContactRecordStream.Arn
+  ApiUrl:
+    Value: !Sub https://${Api}.execute-api.${AWS::Region}.amazonaws.com
+  TableName:
+    Value: !Ref Table
+  AlarmTopicArn:
+    Value: !Ref AlarmTopic
+  UserPoolId:
+    Condition: UseCognito
+    Value: !Ref UserPool
+  UserPoolClientId:
+    Condition: UseCognito
+    Value: !Ref UserPoolClient
+  AuthDomain:
+    Condition: UseCognito
+    Value: !Sub https://surveycx-${AWS::StackName}-${AWS::AccountId}.auth.${AWS::Region}.amazoncognito.com

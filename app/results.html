@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SurveyCX results</title>
+<meta name="description" content="Survey results by agent, queue, driver and period.">
+<meta name="robots" content="noindex">
+<link rel="icon" href="logo.svg" type="image/svg+xml">
+<link rel="stylesheet" href="app.css">
+<style>@media print{header.app,.filters,.btn,.drawer{display:none!important}main{max-width:none}}</style>
+</head>
+<body>
+<header class="app">
+  <a class="mark" href="results.html"><img src="logo.svg" alt="" data-brand-logo><span><span data-brand-name="SurveyCX">SurveyCX</span> <span class="muted" style="font-weight:500">results</span></span></a>
+  <nav aria-label="Sections"><a href="console.html" id="console-link">Console</a><a href="results.html" aria-current="page">Results</a><button type="button" id="signout">Sign out</button></nav>
+</header>
+<main>
+  <form class="card filters row" id="filters" aria-label="Filters">
+    <label style="margin:0">Period <select id="f-range" style="width:auto"><option value="7">Last 7 days</option><option value="30" selected>Last 30 days</option><option value="90">Last 90 days</option><option value="custom">Custom</option></select></label>
+    <span id="custom" class="row hidden"><label style="margin:0">From <input type="date" id="f-from" style="width:auto"></label><label style="margin:0">To <input type="date" id="f-to" style="width:auto"></label></span>
+    <label style="margin:0">Survey <select id="f-survey" style="width:auto"><option value="">All</option></select></label>
+    <label style="margin:0">Queue <select id="f-queue" style="width:auto"><option value="">All</option></select></label>
+    <label style="margin:0" id="agent-filter">Agent <select id="f-agent" style="width:auto"><option value="">All</option></select></label>
+    <label style="margin:0"><input type="checkbox" id="f-low"> Low scores only</label>
+    <span style="flex:1"></span>
+    <button type="button" class="btn ghost small" id="export">Export CSV</button>
+    <button type="button" class="btn ghost small" onclick="print()">Print</button>
+  </form>
+  <p class="muted" id="headline" aria-live="polite" style="margin:.8rem 0 0"></p>
+  <div class="tiles" id="tiles"></div>
+  <div class="grid two" style="grid-template-columns:2fr 1fr">
+    <div class="card"><h2>Score by day <span class="muted" style="font-weight:400;font-size:.85rem">average on a 1-5 scale; red = at or below the low threshold</span></h2><div class="chart" id="chart" role="img" aria-label="Average score by day"></div><table class="sr" id="chart-table"></table></div>
+    <div class="card"><h2>Completion</h2><div id="funnel"></div></div>
+  </div>
+  <div class="grid two" style="grid-template-columns:1fr 1fr;margin-top:1rem">
+    <div class="card scroll"><h2>By agent</h2><table id="t-agents"></table></div>
+    <div class="card scroll"><h2>By queue</h2><table id="t-queues"></table></div>
+    <div class="card scroll"><h2>By driver</h2><table id="t-drivers"></table></div>
+    <div class="card scroll"><h2>By channel</h2><table id="t-channels"></table></div>
+  </div>
+  <div class="card scroll" style="margin-top:1rem"><h2>Responses <span class="muted" style="font-weight:400;font-size:.85rem" id="resp-count"></span></h2><table id="t-responses"></table></div>
+</main>
+<aside class="drawer" id="drawer" hidden aria-label="Response detail">
+  <div class="row" style="justify-content:space-between"><h2 id="d-title">Response</h2><button type="button" class="btn ghost small" id="d-close">Close</button></div>
+  <div id="d-body"></div>
+</aside>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<script src="config.js"></script>
+<script src="surveycx-core.js"></script>
+<script src="surveycx-auth.js"></script>
+<script src="common.js"></script>
+<script>
+(async function () {
+  const { esc, toast, api, applyBrand, fmt, viewer, ready, API } = App;
+  await ready();
+  const me = viewer();
+  const $ = (id) => document.getElementById(id);
+  if (!me.supervisor) { $('agent-filter').classList.add('hidden'); $('export').classList.add('hidden'); $('console-link').classList.add('hidden'); }
+  const day = (d) => d.toISOString().slice(0, 10);
+  function range() { const r = $('f-range').value; if (r === 'custom') return { from: $('f-from').value, to: $('f-to').value }; const to = new Date(); const from = new Date(to.getTime() - (+r - 1) * 86400000); return { from: day(from), to: day(to) }; }
+  $('f-range').onchange = () => { $('custom').classList.toggle('hidden', $('f-range').value !== 'custom'); load(); };
+  ['f-from', 'f-to', 'f-survey', 'f-queue', 'f-agent', 'f-low'].forEach((id) => { $(id).onchange = load; });
+  const qs = () => { const { from, to } = range(); const p = new URLSearchParams({ from, to }); if ($('f-survey').value) p.set('surveyId', $('f-survey').value); if ($('f-queue').value) p.set('queue', $('f-queue').value); if ($('f-agent').value) p.set('agent', $('f-agent').value); if ($('f-low').checked) p.set('low', '1'); return p.toString(); };
+  const fill = (sel, values, label) => { const cur = sel.value; sel.innerHTML = '<option value="">All</option>' + values.map((v) => `<option value="${esc(v.id)}">${esc(label ? label(v) : v.id)}</option>`).join(''); sel.value = [...sel.options].some((o) => o.value === cur) ? cur : ''; };
+  const tile = (v, l) => `<div class="tile"><div class="v">${v}</div><div class="l">${l}</div></div>`;
+  const table = (el, rows, cols) => { el.innerHTML = `<thead><tr>${cols.map((c) => `<th class="${c.num ? 'num' : ''}">${c.h}</th>`).join('')}</tr></thead><tbody>${rows.map((r) => `<tr>${cols.map((c) => `<td class="${c.num ? 'num' : ''}">${c.f(r)}</td>`).join('')}</tr>`).join('') || '<tr><td colspan="9" class="muted">Nothing in this period.</td></tr>'}</tbody>`; };
+  const G = [{ h: 'Responses', num: true, f: (r) => r.n }, { h: 'CSAT %', num: true, f: (r) => fmt.pct(r.csatPct) }, { h: 'CSAT avg', num: true, f: (r) => fmt.n1(r.csat) }, { h: 'NPS', num: true, f: (r) => fmt.int(r.nps) }, { h: 'CES', num: true, f: (r) => fmt.n1(r.ces) }, { h: 'Low', num: true, f: (r) => r.low ? `<span class="pill low">${r.low}</span>` : '0' }];
+  let surveys = [], lastRows = [];
+  async function load() {
+    try {
+      const q = qs();
+      const [rep, resp] = await Promise.all([api('GET', '/report?' + q), api('GET', '/responses?' + q)]);
+      surveys = rep.surveys; lastRows = resp.responses;
+      fill($('f-survey'), rep.surveys, (s) => s.name); fill($('f-queue'), rep.queues); fill($('f-agent'), rep.agents, (a) => a.name);
+      const o = rep.overall;
+      $('tiles').innerHTML = tile(o.n, 'completed responses') + tile(fmt.pct(o.completion), `completion (${o.offered} offered)`) + tile(fmt.pct(o.csatPct), 'CSAT, 4 or 5 of 5') + tile(fmt.n1(o.csat), 'CSAT average') + tile(fmt.int(o.nps), 'NPS') + tile(fmt.n1(o.ces), 'effort, 1-7') + tile(o.low, 'low scores');
+      const prev = await api('GET', '/report?' + new URLSearchParams(Object.assign(Object.fromEntries(new URLSearchParams(q)), previous(rep.from, rep.to))).toString()).catch(() => null);
+      const diff = prev && prev.overall.csatPct != null && o.csatPct != null ? o.csatPct - prev.overall.csatPct : null;
+      $('headline').textContent = o.n ? `${o.n} customers answered between ${rep.from} and ${rep.to}. CSAT ${fmt.pct(o.csatPct)}${diff != null ? ` (${diff >= 0 ? '+' : ''}${diff} points against the previous period)` : ''}${o.nps != null ? `, NPS ${o.nps}` : ''}${o.low ? `, ${o.low} low score${o.low === 1 ? '' : 's'} flagged for follow-up` : ''}.` : `No completed responses between ${rep.from} and ${rep.to}.`;
+      // chart
+      const days = rep.days, max = 5;
+      $('chart').innerHTML = days.map((d) => `<b style="height:${d.five != null ? (d.five / max) * 100 : 2}%" class="${d.five != null && d.five <= 2 ? 'low' : ''}" data-t="${d.id}: ${fmt.n1(d.five)} (${d.n})"></b>`).join('') || '<span class="muted">No data</span>';
+      $('chart-table').innerHTML = '<tr><th>Day</th><th>Average</th><th>Responses</th></tr>' + days.map((d) => `<tr><td>${d.id}</td><td>${fmt.n1(d.five)}</td><td>${d.n}</td></tr>`).join('');
+      $('funnel').innerHTML = [['Offered', o.offered], ['Started', o.started], ['Completed', o.n]].map(([l, v]) => `<div style="margin:.4rem 0"><div class="row" style="justify-content:space-between"><span>${l}</span><b>${v}</b></div><div class="bar"><i style="width:${o.offered ? (v / o.offered) * 100 : 0}%"></i></div></div>`).join('') + `<p class="muted">${rep.channels.map((c) => `${c.id}: ${fmt.pct(c.completion)} of ${c.offered}`).join(' · ')}</p>`;
+      table($('t-agents'), rep.agents, [{ h: 'Agent', f: (r) => esc(r.name) }, ...G]);
+      table($('t-queues'), rep.queues, [{ h: 'Queue', f: (r) => esc(r.id) }, ...G]);
+      table($('t-drivers'), rep.drivers, [{ h: 'Driver', f: (r) => esc(r.id) + (r.type === 'choice' ? '<div class="muted">' + Object.entries(r.choices).map(([k, v]) => esc(k) + ' ' + v).join(', ') + '</div>' : '') }, { h: 'Answers', num: true, f: (r) => r.n }, { h: 'Avg (1-5)', num: true, f: (r) => fmt.n1(r.five) }, { h: 'NPS', num: true, f: (r) => fmt.int(r.nps) }, { h: 'CES', num: true, f: (r) => fmt.n1(r.ces) }]);
+      table($('t-channels'), rep.channels, [{ h: 'Channel', f: (r) => esc(r.id) }, { h: 'Offered', num: true, f: (r) => r.offered }, { h: 'Completion', num: true, f: (r) => fmt.pct(r.completion) }, ...G]);
+      $('resp-count').textContent = `${resp.responses.length} shown, newest first`;
+      table($('t-responses'), resp.responses, [{ h: 'When', f: (r) => fmt.when(r.completedAt || r.startedAt) }, { h: 'Agent', f: (r) => esc(r.agentName || '') }, { h: 'Queue', f: (r) => esc(r.queue || '') }, { h: 'Channel', f: (r) => esc(r.channel) }, { h: 'Status', f: (r) => r.status === 'completed' ? (r.scores && r.scores.low ? '<span class="pill low">low</span>' : '<span class="pill">done</span>') : `<span class="pill paused">${r.status}</span>` }, { h: 'Score', num: true, f: (r) => fmt.n1(r.scores && r.scores.five) }, { h: 'Comment', f: (r) => esc(comment(r)) }, { h: '', f: (r) => `<button type="button" class="btn ghost small" data-c="${esc(r.contactId)}">Open</button>` }]);
+      $('t-responses').querySelectorAll('button[data-c]').forEach((b) => { b.onclick = () => open(b.dataset.c); });
+      if (location.hash.startsWith('#contact=')) { open(decodeURIComponent(location.hash.slice(9))); history.replaceState(null, '', location.pathname); }
+    } catch (err) { toast(err.message, true); }
+  }
+  function previous(from, to) { const n = Math.round((Date.parse(to) - Date.parse(from)) / 86400000) + 1; return { to: day(new Date(Date.parse(from) - 86400000)), from: day(new Date(Date.parse(from) - n * 86400000)) }; }
+  function comment(r) { const s = surveys.find((x) => x.id === r.surveyId); const text = Object.entries(r.answers || {}).find(([k, v]) => typeof v === 'string' && v); return text ? text[1].slice(0, 80) : ''; }
+  async function open(contactId) {
+    try {
+      const { response: r, survey } = await api('GET', '/responses/' + encodeURIComponent(contactId));
+      $('d-title').textContent = (survey ? survey.name : 'Response') + (r.scores && r.scores.low ? ' · low score' : '');
+      const rows = (survey ? survey.questions : []).map((q) => { const v = r.answers[q.id]; return v === undefined ? '' : `<tr><td>${esc(q.text)}</td><td class="num">${esc(q.type === 'choice' ? q.options[v - 1] : v === '' ? '(skipped)' : v)}</td></tr>`; }).join('');
+      $('d-body').innerHTML = `<p class="muted">${fmt.when(r.completedAt || r.startedAt)} · ${esc(r.channel)} · queue ${esc(r.queue || '–')} · agent ${esc(r.agentName || '–')} · ${esc(r.status)}</p>
+        ${r.scores ? `<div class="tiles">${['csat', 'nps', 'ces', 'five'].filter((k) => r.scores[k] != null).map((k) => `<div class="tile"><div class="v">${r.scores[k]}</div><div class="l">${k === 'five' ? 'overall 1-5' : k.toUpperCase()}</div></div>`).join('')}</div>` : ''}
+        <table>${rows}</table>
+        <p class="muted" style="margin-top:1rem">Contact id <code>${esc(r.contactId)}</code>${App.cfg.connectUrl ? ` · <a href="${esc(App.cfg.connectUrl)}/contact-trace-records/details/${esc(r.contactId)}" target="_blank" rel="noopener">Open in Amazon Connect</a>` : ''}${r.sendError ? `<br>Invitation failed: ${esc(r.sendError)}` : ''}</p>
+        ${me.supervisor ? `<button type="button" class="btn danger small" id="d-delete">Delete this response</button>` : ''}`;
+      $('drawer').hidden = false; $('d-close').focus();
+      const del = $('d-delete'); if (del) del.onclick = async () => { if (!confirm('Delete this response? This cannot be undone.')) return; await api('DELETE', '/responses/' + encodeURIComponent(contactId)); $('drawer').hidden = true; toast('Deleted'); load(); };
+    } catch (err) { toast(err.message, true); }
+  }
+  $('d-close').onclick = () => { $('drawer').hidden = true; };
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') $('drawer').hidden = true; });
+  $('export').onclick = async () => { try { const r = await api('GET', '/export.csv?' + qs(), undefined, true); if (!r.ok) throw new Error('export failed'); const blob = await r.blob(); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = (r.headers.get('content-disposition') || '').split('filename=')[1]?.replace(/"/g, '') || 'surveycx.csv'; a.click(); } catch (err) { toast(err.message, true); } };
+  try { applyBrand((await api('GET', '/settings')).settings.brand); } catch {}
+  await load();
+})();
+</script>
+</body>
+</html>

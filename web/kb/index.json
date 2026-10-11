@@ -1,0 +1,14 @@
+[
+  { "slug": "getting-started", "title": "Getting started", "summary": "From subscribing on AWS Marketplace to the first answered survey.", "updated": "0.1.0" },
+  { "slug": "survey-builder", "title": "Building a survey", "summary": "Question types, targeting by queue or attribute, sampling, the skip rule and the low-score threshold.", "updated": "0.1.0" },
+  { "slug": "voice-and-chat", "title": "Surveys on voice and chat", "summary": "The flow module, the disconnect flow, and what the customer hears or sees.", "updated": "0.1.0" },
+  { "slug": "sms-and-email", "title": "SMS and email invitations", "summary": "Setting up sending, the frequency cap, the send window, reminders and opt-outs.", "updated": "0.1.0" },
+  { "slug": "closed-loop", "title": "Closed loop: Tasks, attributes and events", "summary": "What happens after a low score, and how to route the follow-up.", "updated": "0.1.0" },
+  { "slug": "results", "title": "Reading the results", "summary": "Scores by agent, queue, driver and period; the funnel; exports; what agents see.", "updated": "0.1.0" },
+  { "slug": "arena", "title": "Feeding Arena", "summary": "Sending survey scores to Arena for Amazon Connect.", "updated": "0.1.0" },
+  { "slug": "other-platforms", "title": "Genesys and other platforms", "summary": "Using SurveyCX as a module with another contact-centre platform through the ingest endpoint.", "updated": "0.1.0" },
+  { "slug": "security-and-data", "title": "Security and data", "summary": "Where data lives, what leaves the account, retention, deletion and compliance notes.", "updated": "0.1.0" },
+  { "slug": "billing", "title": "Billing and the free trial", "summary": "What a completed response is, how usage is reported, and the trial.", "updated": "0.1.0" },
+  { "slug": "settings-reference", "title": "Settings reference", "summary": "Every stack parameter and console setting.", "updated": "0.1.0" },
+  { "slug": "troubleshooting", "title": "Troubleshooting", "summary": "No survey on the call, no invitations, missing agents, failed sends.", "updated": "0.1.0" }
+]

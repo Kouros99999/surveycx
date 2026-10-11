@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>How did we do?</title>
+<meta name="robots" content="noindex">
+<link rel="icon" href="logo.svg" type="image/svg+xml">
+<link rel="stylesheet" href="app.css">
+<style>
+body{background:var(--bg)}
+.wrap{max-width:34rem;margin:0 auto;padding:1.2rem 1rem 3rem}
+.brand{display:flex;align-items:center;gap:.6rem;margin:.6rem 0 1.4rem;font-weight:700}
+.brand img{height:36px;max-width:160px;object-fit:contain}
+.progress{height:6px;background:var(--line);border-radius:3px;margin:0 0 1.2rem;overflow:hidden}.progress i{display:block;height:100%;background:var(--accent);transition:width .3s}
+fieldset{border:0;padding:0;margin:0}
+legend{font-size:1.25rem;font-weight:650;line-height:1.35;margin-bottom:1rem}
+.scale{display:flex;gap:.4rem;flex-wrap:wrap}
+.scale label{flex:1 1 2.6rem;margin:0}
+.scale input{position:absolute;opacity:0;width:0;height:0}
+.scale span{display:block;text-align:center;padding:.8rem .2rem;border:2px solid var(--line);border-radius:10px;font-weight:650;font-size:1.1rem;cursor:pointer;background:var(--card)}
+.scale input:checked+span{border-color:var(--accent);background:var(--accent-soft);color:var(--accent-dark)}
+.scale input:focus-visible+span{outline:3px solid var(--focus);outline-offset:2px}
+.ends{display:flex;justify-content:space-between;color:var(--muted);font-size:.85rem;margin-top:.4rem}
+.choices label{display:block;margin:.4rem 0}
+.choices label span{display:block;padding:.7rem .9rem;border:2px solid var(--line);border-radius:10px;cursor:pointer;background:var(--card)}
+.choices input{position:absolute;opacity:0;width:0;height:0}
+.choices input:checked+span{border-color:var(--accent);background:var(--accent-soft)}
+.choices input:focus-visible+span{outline:3px solid var(--focus);outline-offset:2px}
+.nav{display:flex;justify-content:space-between;gap:.6rem;margin-top:1.4rem}
+.err{color:var(--bad);font-weight:600;margin:.5rem 0}
+footer{margin-top:3rem;font-size:.85rem;color:var(--muted)}
+footer button{background:none;border:0;color:var(--muted);text-decoration:underline;cursor:pointer;font:inherit;padding:0}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="brand"><img id="logo" alt="" hidden><span id="brand-name">SurveyCX</span></div>
+  <div class="progress" aria-hidden="true"><i id="bar" style="width:0"></i></div>
+  <main id="main" aria-live="polite"><p class="muted">Loading your survey…</p></main>
+  <footer id="foot" hidden><button type="button" id="optout">I'd rather not receive surveys</button></footer>
+</div>
+<script src="config.js"></script>
+<script src="surveycx-core.js"></script>
+<script src="common.js"></script>
+<script>
+(async function () {
+  const { esc, api, ready } = App;
+  await ready();
+  const $ = (id) => document.getElementById(id);
+  const main = $('main');
+  const hash = location.hash.slice(1), [token, extra] = hash.split('&');
+  const preset = (extra || '').startsWith('a=') ? extra.slice(2) : null;   // one-click rating from the email
+  let state, survey, answers = {}, preview = token === 'preview';
+  const call = async (method, path, body) => preview ? previewApi(method, body) : api(method, '/s/' + encodeURIComponent(token) + path, body);
+  function previewApi(method, body) {
+    if (!survey) survey = JSON.parse(sessionStorage.getItem('surveycx.preview') || 'null');
+    if (!survey) return Promise.reject(new Error('Open the preview from the console.'));
+    if (body && body.answers) for (const k of Object.keys(body.answers)) { const q = survey.questions.find((x) => x.id === k); try { answers[k] = SurveyCX.parseAnswer(q, body.answers[k]); } catch (e) { return Promise.resolve({ errors: { [k]: e.message }, survey, answers, status: 'started', next: q }); } }
+    const next = SurveyCX.nextQuestion(survey, answers, 'web');
+    return Promise.resolve({ survey, brand: { name: 'Preview' }, status: next ? 'started' : 'completed', answers, next });
+  }
+  function brand(b) { if (!b) return; if (b.accent) { document.documentElement.style.setProperty('--accent', b.accent); document.documentElement.style.setProperty('--accent-dark', b.accent); } $('brand-name').textContent = b.name || 'SurveyCX'; if (b.logoUrl) { $('logo').src = b.logoUrl; $('logo').hidden = false; } }
+  function message(title, text) { main.innerHTML = `<h1>${esc(title)}</h1><p>${esc(text)}</p>`; $('bar').style.width = '100%'; }
+  function render(st) {
+    state = st; survey = st.survey; answers = st.answers || {};
+    document.documentElement.lang = (survey.language || 'en').slice(0, 5);
+    document.title = survey.name;
+    const asked = survey.questions;
+    const answered = Object.keys(answers).length;
+    $('bar').style.width = Math.min(100, Math.round((answered / Math.max(1, asked.length)) * 100)) + '%';
+    $('foot').hidden = preview;
+    if (st.status === 'completed' || !st.next) { message('Thank you', survey.outro || 'Thank you for your feedback.'); return; }
+    const q = st.next, first = answered === 0;
+    let control = '';
+    if (q.type === 'text') control = `<label class="sr" for="ans">Your answer</label><textarea id="ans" rows="4" maxlength="2000" placeholder="Type your answer"></textarea>`;
+    else if (q.type === 'choice') control = `<div class="choices">${q.options.map((o, i) => `<label><input type="radio" name="ans" value="${i + 1}"><span>${esc(o)}</span></label>`).join('')}</div>`;
+    else {
+      const r = SurveyCX.TYPES[q.type]; const vals = []; for (let v = r.min; v <= r.max; v++) vals.push(v);
+      const ends = { rating: ['Very dissatisfied', 'Very satisfied'], nps: ['Not at all likely', 'Extremely likely'], ces: ['Very difficult', 'Very easy'], yesno: ['No', 'Yes'] }[q.type];
+      control = `<div class="scale">${vals.map((v) => `<label><input type="radio" name="ans" value="${v}"><span>${q.type === 'yesno' ? (v ? 'Yes' : 'No') : v}</span></label>`).join('')}</div>${q.type === 'yesno' ? '' : `<div class="ends"><span>${ends[0]}</span><span>${ends[1]}</span></div>`}`;
+    }
+    main.innerHTML = `${first && survey.intro ? `<p>${esc(survey.intro)}</p>` : ''}<form id="f"><fieldset><legend>${esc(q.text)}</legend>${control}</fieldset><p class="err" id="err" role="alert"></p><div class="nav"><span class="muted" style="align-self:center">${answered + 1} of ${survey.questions.length}${q.required ? '' : ' · optional'}</span><span class="row">${q.required ? '' : '<button type="button" class="btn ghost" id="skip">Skip</button>'}<button type="submit" class="btn">${SurveyCX.nextQuestion(survey, Object.assign({}, answers, { [q.id]: q.type === 'text' ? 'x' : SurveyCX.TYPES[q.type].max }), 'web') ? 'Next' : 'Finish'}</button></span></div></form>`;
+    const f = $('f');
+    f.querySelectorAll('input[type=radio]').forEach((i) => { i.onchange = () => f.requestSubmit(); });
+    f.onsubmit = async (e) => { e.preventDefault(); const v = q.type === 'text' ? $('ans').value : (f.querySelector('input[name=ans]:checked') || {}).value; if (v === undefined || (q.required && v === '')) { $('err').textContent = 'Please choose an answer.'; return; } await send({ [q.id]: v }); };
+    const skip = $('skip'); if (skip) skip.onclick = () => send({ [q.id]: '' });
+    (f.querySelector('input,textarea') || {}).focus && f.querySelector('input,textarea').focus();
+  }
+  async function send(a, finish) {
+    try { render(await call('POST', '/answers', { answers: a, finish })); }
+    catch (e) { if (e.status === 400 && e.data && e.data.errors) { render(e.data); $('err').textContent = Object.values(e.data.errors)[0]; } else if (e.status === 409) { brand(e.data.brand); message('Already answered', e.data.error); } else message('Something went wrong', e.message); }
+  }
+  try {
+    const st = await call('GET', '');
+    brand(st.brand);
+    if (preset && st.next && st.next.type === 'rating' && st.status === 'offered') { await send({ [st.next.id]: preset }, false); }
+    else render(st);
+  } catch (e) { message(e.status === 404 ? 'This link is not valid' : e.status === 410 ? 'This survey has closed' : 'Something went wrong', e.message); }
+  $('optout').onclick = async () => { if (!confirm('Stop receiving survey invitations from us?')) return; try { const r = await call('POST', '/optout'); message('Done', r.message); $('foot').hidden = true; } catch (e) { alert(e.message); } };
+})();
+</script>
+</body>
+</html>

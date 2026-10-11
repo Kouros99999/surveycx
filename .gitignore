@@ -1,0 +1,13 @@
+node_modules/
+.aws-sam/
+samconfig.toml
+lambda/src/surveycx-core.js
+lambda/packaged.yaml
+lambda/seller/packaged.yaml
+release/
+surveycx-flow-module.json
+.env
+*.log
+.DS_Store
+Thumbs.db
+.claude/settings.local.json

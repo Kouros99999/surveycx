@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SurveyCX Help Center</title>
+<meta name="description" content="Guides for setting up and running SurveyCX for Amazon Connect.">
+<link rel="icon" type="image/svg+xml" href="logo.svg">
+<link rel="stylesheet" href="site.css?v=1">
+<style>
+.kb-list{list-style:none;padding:0;margin:1rem 0;display:grid;gap:.6rem}
+.kb-list li{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:.8rem 1rem}
+.kb-list a{font-weight:600;text-decoration:none}
+.kb-list p{margin:.2rem 0 0;color:var(--muted);font-size:.95rem}
+.kb-list small{color:var(--muted);font-size:.8rem}
+.crumb{font-size:.9rem;color:var(--muted);margin-top:1.2rem}
+.crumb a{color:var(--muted)}
+article h1{margin-top:.6rem}
+article h2{margin-top:1.8rem}
+article code{background:var(--card);border:1px solid var(--line);border-radius:4px;padding:.05rem .35rem;font-size:.92em}
+article pre{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:.8rem 1rem;overflow-x:auto;font-size:.9rem}
+article pre code{border:0;background:transparent;padding:0}
+article table{min-width:0}
+article .upd{color:var(--muted);font-size:.85rem}
+.search{width:100%;border:1px solid var(--line);border-radius:6px;padding:.6rem .8rem;font:inherit;background:var(--card);color:var(--ink);margin-top:1rem}
+</style>
+<header class="site"><div class="wrap">
+  <a class="mark" href="./"><img src="logo.svg" alt="">SurveyCX for Amazon Connect</a>
+  <button class="menu-btn" aria-label="Menu" onclick="document.querySelector('nav.main').classList.toggle('open')">Menu</button>
+  <nav class="main"><a href="index.html#features">Features</a><a href="index.html#pricing">Pricing</a><a href="kb.html">Help</a><a href="releases.html">Release notes</a><a href="support.html">Support</a><a class="cta" href="results.html">See the demo</a></nav>
+</div></header>
+<main class="page" id="main">
+  <p class="muted">Loading…</p>
+</main>
+<footer class="site"><div class="wrap">
+  <div><a class="mark" href="./"><img src="logo.svg" alt="">SurveyCX</a><p style="margin-top:.6rem">Post-contact surveys for Amazon Connect and other contact-centre platforms, by EKPK LLC.</p></div>
+  <div><h4>Product</h4><a href="index.html#features">Features</a><a href="index.html#pricing">Pricing</a><a href="results.html">Demo</a><a href="releases.html">Release notes</a></div>
+  <div><h4>Support</h4><a href="kb.html">Help center</a><a href="support.html">Contact support</a><a href="kb.html?a=security-and-data">Security</a><a href="privacy.html">Privacy policy</a><a href="https://github.com/Kouros99999/surveycx">Documentation on GitHub</a></div>
+  <div class="legal">Amazon Connect is a trademark of Amazon.com, Inc. or its affiliates. SurveyCX is not affiliated with or endorsed by Amazon. © EKPK LLC.</div>
+</div></footer>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
+<script>
+(async function () {
+  const main = document.getElementById('main');
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  let index = [];
+  try { index = await (await fetch('kb/index.json', { cache: 'no-cache' })).json(); }
+  catch (e) { main.innerHTML = '<p>The help center could not be loaded. Please try again shortly.</p>'; return; }
+  const slug = new URLSearchParams(location.search).get('a');
+  const article = index.find((a) => a.slug === slug);
+
+  function renderList(filter) {
+    const q = (filter || '').trim().toLowerCase();
+    const items = index.filter((a) => !q || (a.title + ' ' + a.summary).toLowerCase().includes(q));
+    document.getElementById('list').innerHTML = items.map((a) => `<li><a href="kb.html?a=${esc(a.slug)}">${esc(a.title)}</a><p>${esc(a.summary)}</p><small>Current as of version ${esc(a.updated)}</small></li>`).join('') || '<li><p>No articles match.</p></li>';
+  }
+
+  if (!article) {
+    main.innerHTML = `<h1>Help center</h1><p class="lede">Guides for setting up and running SurveyCX. Each article says which version it is current for; the <a href="releases.html">release notes</a> list what changed.</p>
+      <input class="search" id="q" type="search" placeholder="Search the help center" aria-label="Search the help center"><ul class="kb-list" id="list"></ul>
+      <p class="muted">Can't find it? Email <a href="mailto:support@ekpk.com">support@ekpk.com</a>.</p>`;
+    renderList(); document.getElementById('q').addEventListener('input', (e) => renderList(e.target.value));
+    document.title = 'SurveyCX Help Center';
+    return;
+  }
+  try {
+    const md = await (await fetch('kb/' + article.slug + '.md', { cache: 'no-cache' })).text();
+    marked.use({ gfm: true, breaks: false });
+    main.innerHTML = `<p class="crumb"><a href="kb.html">Help center</a> › ${esc(article.title)}</p><article>${marked.parse(md)}<p class="upd">Current as of version ${esc(article.updated)}. See the <a href="releases.html">release notes</a> for what changed since.</p></article>`;
+    // Links to other articles are written as kb.html?a=slug and work as-is; external links open in a new tab.
+    main.querySelectorAll('article a[href^="http"]').forEach((a) => { a.target = '_blank'; a.rel = 'noopener'; });
+    document.title = article.title + ' · SurveyCX Help Center';
+  } catch (e) { main.innerHTML = '<p>This article could not be loaded.</p>'; }
+})();
+</script>
+</html>

@@ -1,0 +1,16 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node lambda/build.js
+      - run: node --test app/surveycx-core.test.js app/surveycx-auth.test.js lambda/src/store.test.js lambda/src/flow.test.js lambda/src/delivery.test.js lambda/src/api.test.js lambda/src/metering.test.js lambda/src/clock.test.js lambda/src/site-deployer.test.js lambda/seller/register.test.js lambda/flow-module.test.js web/releases.test.js
