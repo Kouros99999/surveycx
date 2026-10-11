@@ -11,7 +11,7 @@
       "Closed loop: a low score opens an Amazon Connect Task with the answers and a link to the contact; scores are written back as contact attributes; an EventBridge event per response.",
       "Results page: CSAT, NPS, effort and completion by agent, queue, driver, channel and day, with the previous period for comparison, every response with its comment, CSV export. Agents see their own results.",
       "Arena feed: each agent-attributable score is sent to Arena for Amazon Connect as a survey score.",
-      "API for other applications: ingest keys report contacts, request survey links to deliver in your own chat widget or app, read the survey definitions and post answers; data keys read responses and the aggregate report; signed webhooks per completed response. Keys can be bound to a tenant, so a partner serving several clients from one stack reports per tenant. Documented in the API reference.",
+      "API for other applications: ingest keys report contacts, request survey links to deliver in your own chat widget or app, read the survey definitions and post answers; data keys read responses and the aggregate report; signed webhooks per completed response. Keys can be bound to a tenant, so a partner serving several clients from one stack reports per tenant; partners whose clients cannot share data provision one stack per client with a single command. Documented in the API reference and the partners article.",
       "Privacy: responses expire after the retention you set; delete everything about a customer or a contact from the console. Public routes are rate-limited.",
       "Sign-ins: `sync-users.js` creates supervisor and agent accounts from the Connect directory in one command.",
       "AWS Marketplace: billed per completed response, 30-day trial with up to 500 responses a day free."
@@ -27,6 +27,7 @@
       "arena",
       "other-platforms",
       "api-reference",
+      "partners",
       "security-and-data",
       "billing",
       "settings-reference",

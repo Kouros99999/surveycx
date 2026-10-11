@@ -43,7 +43,7 @@ Up to 92 days per call; the rows are the same as the CSV export, without custome
 
 ## Several tenants on one stack
 
-A partner serving several clients, or a company with several business units, tags each contact with a **tenant**: bind each client's ingest and data keys to their tenant in *Settings > Other platforms and BI*, and on Amazon Connect set the stack's `TenantAttribute` parameter to the contact attribute that names the unit. The results page gains a tenant filter and a per-tenant table, the CSV and webhooks carry the tenant, and a tenant-bound data key can never read another tenant's responses. Surveys and settings are still shared across the stack; for full isolation (own surveys, own brand, own sign-ins) deploy one stack per client.
+A partner serving several clients, or a company with several business units, tags each contact with a **tenant**: bind each client's ingest and data keys to their tenant in *Settings > Other platforms and BI*, and on Amazon Connect set the stack's `TenantAttribute` parameter to the contact attribute that names the unit. The results page gains a tenant filter and a per-tenant table, the CSV and webhooks carry the tenant, and a tenant-bound data key can never read another tenant's responses. Surveys and settings are still shared across the stack; for full isolation (own surveys, own brand, own sign-ins, own storage) deploy one stack per client with the provisioner; see [Partners](kb.html?a=partners).
 
 ## Rendering the survey in your own interface
 

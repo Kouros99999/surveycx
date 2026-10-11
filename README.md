@@ -26,6 +26,7 @@ Post-contact surveys for Amazon Connect, and a survey module for other contact-c
 | `lambda/template.yaml` | SAM stack |
 | `lambda/flow-module.js` | Generates the Amazon Connect flow module JSON |
 | `lambda/sync-users.js` | Creates Cognito sign-ins from the Connect directory |
+| `lambda/provision.js` | One command per client: deploys a stack from a published release, writes brand, webhook, starter survey and first keys |
 | `lambda/src/phonezone.js` | The customer's time zone from their phone number, for the send window |
 | `lambda/seller/` | Marketplace seller side: registration page and license notifications (deploy once, seller account) |
 | `lambda/release.js` | Builds and publishes a release; refuses without release notes and help-center updates |
