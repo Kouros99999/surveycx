@@ -37,4 +37,4 @@ The task flow ID must be set in *Settings > Closed loop* and the stack must know
 
 ## Getting help
 
-Email [support@ekpk.com](mailto:support@ekpk.com) with the stack name, region and the time of the contact. Nothing in your account is visible to us, so the CloudWatch log lines help.
+Email [support@surveycx.ai](mailto:support@surveycx.ai) with the stack name, region and the time of the contact. Nothing in your account is visible to us, so the CloudWatch log lines help.

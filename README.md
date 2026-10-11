@@ -2,7 +2,7 @@
 
 Post-contact surveys for Amazon Connect, and a survey module for other contact-centre platforms. Surveys run on the IVR after the call, in chat, or by SMS and email link; answers are stored per contact and agent, reported by agent, queue, driver and period, fed into [Arena](https://github.com/Kouros99999/arena-for-connect), and a low score opens a follow-up Task. Deploys into the customer's own AWS account; billed per completed response through AWS Marketplace. By EKPK LLC.
 
-**Live demo (simulated data):** https://kouros99999.github.io/surveycx/results.html
+**Live demo (simulated data):** https://surveycx.ai/results.html
 
 ## What is here
 

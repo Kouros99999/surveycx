@@ -12,7 +12,7 @@
 const fs = require('fs'), path = require('path');
 const { marked } = require('marked');
 
-const ORIGIN = 'https://kouros99999.github.io/surveycx';   // until a domain is attached
+const ORIGIN = 'https://surveycx.ai';
 const out = path.resolve(process.argv[2] || 'site');
 const read = (f) => fs.readFileSync(path.join(out, f), 'utf8').replace(/\r\n/g, '\n');   // CRLF checkouts must match the same strings
 const write = (f, s) => { fs.mkdirSync(path.dirname(path.join(out, f)), { recursive: true }); fs.writeFileSync(path.join(out, f), s); };
@@ -93,7 +93,7 @@ ${footer('../')}
     `<main class="page" id="main">
   <h1>Help center</h1><p class="lede">Guides for setting up and running SurveyCX. Each article says which version it is current for; the <a href="releases.html">release notes</a> list what changed.</p>
   <input class="search" id="q" type="search" placeholder="Search the help center" aria-label="Search the help center"><ul class="kb-list" id="list">${list}</ul>
-  <p class="muted">Can't find it? Email <a href="mailto:support@ekpk.com">support@ekpk.com</a>.</p>
+  <p class="muted">Can't find it? Email <a href="mailto:support@surveycx.ai">support@surveycx.ai</a>.</p>
 </main>`);
   // Replace the loader with a redirect for old ?a= links and a search filter over the rendered list.
   html = html.replace(/<script src="https:\/\/cdnjs\.cloudflare\.com\/ajax\/libs\/marked[^]*<\/script>\s*<script>[^]*?<\/script>/, `<script>
@@ -132,7 +132,7 @@ ${footer('../')}
   const faq = [...html.matchAll(/<details><summary>([^<]*)<\/summary><p>([^]*?)<\/p><\/details>/g)].map((m) => ({ '@type': 'Question', name: m[1], acceptedAnswer: { '@type': 'Answer', text: m[2].replace(/<[^>]+>/g, '') } }));
   const price = (/\$(\d+\.\d+) <small>per completed response/.exec(html) || [])[1] || '0.10';
   const ld = [
-    { '@context': 'https://schema.org', '@type': 'Organization', name: 'EKPK LLC', url: ORIGIN, logo: `${ORIGIN}/logo.png`, email: 'support@ekpk.com' },
+    { '@context': 'https://schema.org', '@type': 'Organization', name: 'EKPK LLC', url: ORIGIN, logo: `${ORIGIN}/logo.png`, email: 'support@surveycx.ai' },
     { '@context': 'https://schema.org', '@type': 'SoftwareApplication', name: 'SurveyCX for Amazon Connect', applicationCategory: 'BusinessApplication', operatingSystem: 'Web', url: ORIGIN, softwareVersion: latest.version, description: (/<meta name="description" content="([^"]*)"/.exec(html) || [])[1],
       offers: { '@type': 'Offer', price, priceCurrency: 'USD', description: 'Per completed survey response, billed through AWS Marketplace. 30-day free trial for up to 500 responses a day.', url: `${ORIGIN}/#pricing` }, publisher: { '@type': 'Organization', name: 'EKPK LLC' }, screenshot: `${ORIGIN}/img/results.png` },
     { '@context': 'https://schema.org', '@type': 'FAQPage', mainEntity: faq },
