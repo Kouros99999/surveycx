@@ -76,7 +76,8 @@ async function closeLoop(row, survey, settings, deps) {
       const instanceId = settings.connectInstanceId || process.env.CONNECT_INSTANCE_ID;
       const refs = {};
       if (instanceId && process.env.CONNECT_INSTANCE_URL) refs['Contact details'] = { Type: 'URL', Value: `${process.env.CONNECT_INSTANCE_URL.replace(/\/$/, '')}/contact-trace-records/details/${row.contactId}` };
-      if (process.env.SITE_URL) refs['Survey response'] = { Type: 'URL', Value: `${process.env.SITE_URL}/results.html#contact=${row.contactId}` };
+      const siteUrl = process.env.SITE_URL || settings.siteUrl;
+      if (siteUrl) refs['Survey response'] = { Type: 'URL', Value: `${siteUrl}/results.html#contact=${row.contactId}` };
       await c.connect.send(new c.StartTaskContactCommand({ InstanceId: instanceId, ContactFlowId: cl.taskFlowId, Name: `Low survey score: ${sc.five} of 5${row.agentName ? ' (' + row.agentName + ')' : ''}`,
         Description: `${survey.name}, ${row.channel}, queue ${row.queue || 'unknown'}.\n` + lines.join('\n').slice(0, 4000), References: refs, PreviousContactId: row.contactId, ClientToken: ('low-' + row.contactId).slice(0, 500),
         Attributes: { surveycx_contact: row.contactId, surveycx_five: String(sc.five), surveycx_agent: row.agentArn || '' } }));

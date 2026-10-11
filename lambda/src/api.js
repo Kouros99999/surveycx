@@ -80,6 +80,7 @@ function mergeSettings(cur, body) {
   const out = JSON.parse(JSON.stringify(cur || {}));
   for (const section of ['delivery', 'closedLoop', 'arena', 'brand']) if (body[section] && typeof body[section] === 'object') out[section] = Object.assign({}, out[section] || {}, body[section]);
   if (body.connectInstanceId !== undefined) out.connectInstanceId = String(body.connectInstanceId || '').trim().slice(0, 100);
+  if (body.siteUrl !== undefined) out.siteUrl = String(body.siteUrl || '').trim().replace(/\/$/, '').slice(0, 200);
   if (out.arena && typeof out.arena.key === 'string' && out.arena.key.startsWith('••••')) out.arena.key = (cur && cur.arena && cur.arena.key) || '';
   if (out.delivery) { for (const k of ['frequencyDays', 'quietStart', 'quietEnd', 'reminderHours']) if (out.delivery[k] !== undefined) out.delivery[k] = Math.max(0, Math.min(k === 'frequencyDays' ? 365 : k === 'reminderHours' ? 168 : 24, +out.delivery[k] || 0)); }
   if (out.brand) { out.brand.name = String(out.brand.name || '').slice(0, 60); if (out.brand.accent && !/^#[0-9a-f]{6}$/i.test(out.brand.accent)) out.brand.accent = '#0f766e'; out.brand.logoUrl = String(out.brand.logoUrl || '').slice(0, 300); }

@@ -71,6 +71,7 @@ async function install(p, clients) {
       SupportedIdentityProviders: cur.SupportedIdentityProviders || ['COGNITO'], PreventUserExistenceErrors: cur.PreventUserExistenceErrors || 'ENABLED',
       AccessTokenValidity: cur.AccessTokenValidity, IdTokenValidity: cur.IdTokenValidity, RefreshTokenValidity: cur.RefreshTokenValidity, TokenValidityUnits: cur.TokenValidityUnits, ReadAttributes: cur.ReadAttributes }));
   }
+  if (p.SiteUrl && clients.store) { const cur = await clients.store.getSettings(); await clients.store.putSettings(Object.assign({}, cur, { siteUrl: p.SiteUrl })); }
   await clients.cloudfront.send(new clients.CreateInvalidationCommand({ DistributionId: p.DistributionId, InvalidationBatch: { CallerReference: String(Date.now()), Paths: { Quantity: 1, Items: ['/*'] } } }));
   return { files: puts.length };
 }
@@ -99,7 +100,7 @@ function realClients() {
   const s3 = require('@aws-sdk/client-s3'), cf = require('@aws-sdk/client-cloudfront'), cg = require('@aws-sdk/client-cognito-identity-provider');
   return { s3: new s3.S3Client({}), PutObjectCommand: s3.PutObjectCommand, ListObjectsV2Command: s3.ListObjectsV2Command, DeleteObjectsCommand: s3.DeleteObjectsCommand,
     cloudfront: new cf.CloudFrontClient({}), CreateInvalidationCommand: cf.CreateInvalidationCommand,
-    cognito: new cg.CognitoIdentityProviderClient({}), DescribeUserPoolClientCommand: cg.DescribeUserPoolClientCommand, UpdateUserPoolClientCommand: cg.UpdateUserPoolClientCommand };
+    cognito: new cg.CognitoIdentityProviderClient({}), DescribeUserPoolClientCommand: cg.DescribeUserPoolClientCommand, UpdateUserPoolClientCommand: cg.UpdateUserPoolClientCommand, store: require('./store.js') };
 }
 
 exports.handler = async (event, context, deps) => {

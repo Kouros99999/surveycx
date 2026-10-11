@@ -126,7 +126,8 @@ function realClients() {
 async function handler(event, context, deps) {
   deps = deps || {};
   const s = deps.store || require('./store.js');
-  const r = await sendDue(s, await s.getSettings(), deps.clients || realClients(), deps.now ? deps.now() : Date.now(), process.env.SITE_URL || '');
+  const settings = await s.getSettings();
+  const r = await sendDue(s, settings, deps.clients || realClients(), deps.now ? deps.now() : Date.now(), process.env.SITE_URL || settings.siteUrl || '');
   console.log(JSON.stringify(r));
   return r;
 }

@@ -41,6 +41,7 @@ test('install writes every file plus config and index, registers callbacks, inva
     cognito: { send: async (c) => { sent.push(c); return c.kind === 'describe' ? { UserPoolClient: { CallbackURLs: ['http://localhost:8765/console.html'], AllowedOAuthFlows: ['code'] } } : {}; } },
     DescribeUserPoolClientCommand: function (i) { this.kind = 'describe'; this.input = i; }, UpdateUserPoolClientCommand: function (i) { this.kind = 'update'; this.input = i; },
     cloudfront: { send: async (c) => { sent.push(c); } }, CreateInvalidationCommand: function (i) { this.kind = 'inv'; this.input = i; },
+    store: { settings: { brand: { name: 'Acme' } }, async getSettings() { return this.settings; }, async putSettings(s) { this.settings = s; } },
   };
   const https = require('https');
   const orig = https.get;
@@ -54,5 +55,6 @@ test('install writes every file plus config and index, registers callbacks, inva
     const upd = sent.find((c) => c.kind === 'update').input;
     assert.ok(upd.CallbackURLs.includes('https://d.cloudfront.net/console.html')); assert.ok(upd.CallbackURLs.includes('http://localhost:8765/console.html'));
     assert.equal(sent.find((c) => c.kind === 'inv').input.DistributionId, 'D1');
+    assert.equal(clients.store.settings.siteUrl, 'https://d.cloudfront.net'); assert.equal(clients.store.settings.brand.name, 'Acme', 'existing settings kept');
   } finally { https.get = orig; }
 });

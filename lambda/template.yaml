@@ -115,7 +115,8 @@ Globals:
         RETENTION_DAYS: !Ref RetentionDays
         CONNECT_INSTANCE_ID: !Ref ConnectInstanceId
         CONNECT_INSTANCE_URL: !Ref ConnectInstanceUrl
-        SITE_URL: !Sub https://${Distribution.DomainName}
+        # The site URL is not an env var: every function reading ${Distribution.DomainName} would make a cycle through the API.
+        # The site installer writes it into the settings row; functions read settings.siteUrl.
         PROVIDER: !Ref Provider
         PARTNER: !Ref Partner
 
@@ -506,6 +507,7 @@ Resources:
       MemorySize: 512
       Policies:
         - S3CrudPolicy: { BucketName: !Ref SiteBucket }
+        - DynamoDBCrudPolicy: { TableName: !Ref Table }   # records the site URL in settings
         - Statement:
             - Effect: Allow
               Action: [cloudfront:CreateInvalidation]
