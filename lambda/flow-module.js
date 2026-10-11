@@ -15,16 +15,19 @@ function build(lambdaArn) {
   const id = (n) => `surveycx-${n}`;
   const lambda = (name, attrs, next) => ({ Identifier: id(name), Type: 'InvokeLambdaFunction', Parameters: { LambdaFunctionARN: lambdaArn, InvocationTimeLimitSeconds: '8', LambdaInvocationAttributes: attrs, ResponseValidation: { ResponseType: 'STRING_MAP' } }, Transitions: { NextAction: id(next), Errors: [{ NextAction: id('end'), ErrorType: 'NoMatchingError' }] } });
   const compare = (name, value, yes, no) => ({ Identifier: id(name), Type: 'Compare', Parameters: { ComparisonValue: value }, Transitions: { NextAction: id(no), Conditions: [{ NextAction: id(yes), Condition: { Operator: 'Equals', Operands: ['true'] } }], Errors: [{ NextAction: id(no), ErrorType: 'NoMatchingCondition' }] } });
+  const ask = (name, max) => ({ Identifier: id(name), Type: 'GetParticipantInput', Parameters: { Text: '$.External.prompt', StoreInput: 'True', InputTimeLimitSeconds: '8', InputValidation: { CustomValidation: { MaximumLength: max } } }, Transitions: { NextAction: id('answer'), Errors: [{ NextAction: id('timeout'), ErrorType: 'NoMatchingError' }] } });
   const say = (name, text, next) => ({ Identifier: id(name), Type: 'MessageParticipant', Parameters: { Text: text }, Transitions: { NextAction: id(next), Errors: [{ NextAction: id(next), ErrorType: 'NoMatchingError' }] } });
   const actions = [
     lambda('start', { action: 'start' }, 'eligible'),
     compare('eligible', '$.External.eligible', 'intro', 'end'),
     say('intro', '$.External.intro', 'done-after-start'),
-    compare('done-after-start', '$.External.done', 'outro', 'ask'),
-    { Identifier: id('ask'), Type: 'GetParticipantInput', Parameters: { Text: '$.External.prompt', StoreInput: 'True', InputTimeLimitSeconds: '10', DTMFConfiguration: { DisableCancelKey: 'False', InputTerminationSequence: '#' }, InputValidation: { CustomValidation: { MaximumLength: '$.External.digits' } } },
-      Transitions: { NextAction: id('answer'), Errors: [{ NextAction: id('timeout'), ErrorType: 'InputTimeLimitExceeded' }, { NextAction: id('answer'), ErrorType: 'NoMatchingCondition' }, { NextAction: id('end'), ErrorType: 'NoMatchingError' }] } },
+    compare('done-after-start', '$.External.done', 'outro', 'which'),
+    // Stored-input blocks accept only NoMatchingError (a timeout lands there too), and the max length must be a literal,
+    // so one block takes single-digit answers and another the two-digit NPS answer; the Lambda says which.
+    compare('which', '$.External.two', 'ask2', 'ask'),
+    ask('ask', '1'), ask('ask2', '2'),
     lambda('answer', { action: 'answer', digits: '$.StoredCustomerInput' }, 'done'),
-    compare('done', '$.External.done', 'outro', 'ask'),
+    compare('done', '$.External.done', 'outro', 'which'),
     say('timeout', 'We did not get an answer. Thank you for your time. Goodbye.', 'end'),
     say('outro', '$.External.outro', 'end'),
     { Identifier: id('end'), Type: 'EndFlowModuleExecution', Parameters: {}, Transitions: {} },

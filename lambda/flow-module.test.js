@@ -16,6 +16,8 @@ test('flow module is a closed graph that loops ask -> answer -> done until the L
   const answer = m.Actions.find((a) => a.Identifier === 'surveycx-answer');
   assert.equal(answer.Parameters.LambdaInvocationAttributes.digits, '$.StoredCustomerInput');
   const done = m.Actions.find((a) => a.Identifier === 'surveycx-done');
-  assert.equal(done.Transitions.Conditions[0].NextAction, 'surveycx-outro'); assert.equal(done.Transitions.NextAction, 'surveycx-ask');
+  assert.equal(done.Transitions.Conditions[0].NextAction, 'surveycx-outro'); assert.equal(done.Transitions.NextAction, 'surveycx-which');
+  for (const n of ['surveycx-ask', 'surveycx-ask2']) { const a = m.Actions.find((x) => x.Identifier === n); assert.equal(a.Parameters.StoreInput, 'True'); assert.deepEqual(a.Transitions.Errors.map((e) => e.ErrorType), ['NoMatchingError'], 'stored input allows only NoMatchingError'); }
+  assert.equal(m.Actions.find((x) => x.Identifier === 'surveycx-ask2').Parameters.InputValidation.CustomValidation.MaximumLength, '2');
   assert.equal(m.Metadata.type, 'contactFlowModule'); assert.equal(m.Actions.at(-1).Type, 'EndFlowModuleExecution');
 });

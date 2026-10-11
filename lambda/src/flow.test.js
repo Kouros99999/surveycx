@@ -27,7 +27,7 @@ test('voice: start asks the first question, answers walk the survey, text is ski
   assert.equal(r.retry, 'true'); assert.equal(r.question, 'csat'); assert.match(r.prompt, /valid answer/);
   r = await h(connectEvent('answer', '1')); assert.equal(r.question, 'resolved');
   r = await h(connectEvent('answer', '0')); assert.equal(r.question, 'effort');
-  r = await h(connectEvent('answer', '2')); assert.equal(r.question, 'nps'); assert.equal(r.digits, '2');
+  r = await h(connectEvent('answer', '2')); assert.equal(r.question, 'nps'); assert.equal(r.digits, '2'); assert.equal(r.two, 'true');
   r = await h(connectEvent('answer', '10'));
   assert.equal(r.done, 'true', 'free text is skipped on voice'); assert.match(r.outro, /Thank you/);
   const row = await s.getResponse('c-1');

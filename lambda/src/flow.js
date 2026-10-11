@@ -9,7 +9,7 @@
  *   eligible   'true' | 'false'     whether a survey applies (sampling, targeting, channel, already surveyed)
  *   intro      the intro text (start only)
  *   prompt     what to say or type next
- *   digits     max DTMF digits for the next question ('1' or '2')
+ *   digits     max DTMF digits for the next question ('1' or '2'); two = 'true' when it is 2 (the module picks the input block)
  *   question   id of the question the prompt asks
  *   retry      'true' when the last input was invalid and the same question is asked again
  *   done       'true' when the survey is complete; outro holds the closing text
@@ -50,7 +50,7 @@ function makeHandler(deps) {
       const row = existing || await responses.offer(s, c, survey, c.channel, nowIso);
       const q = S.nextQuestion(survey, row.answers, c.channel);
       if (!q) { await responses.complete(s, row, survey, nowIso, deps); return { eligible: 'true', done: 'true', intro: survey.intro, outro: survey.outro }; }
-      return { eligible: 'true', done: 'false', intro: survey.intro, prompt: S.promptFor(q, c.channel), digits: String(S.voiceDigits(q)), question: q.id, survey: survey.id };
+      return { eligible: 'true', done: 'false', intro: survey.intro, prompt: S.promptFor(q, c.channel), digits: String(S.voiceDigits(q)), two: String(S.voiceDigits(q) === 2), question: q.id, survey: survey.id };
     }
     if (action === 'answer') {
       const row = await s.getResponse(contact.contactId);
@@ -65,10 +65,10 @@ function makeHandler(deps) {
         const raw = current.type === 'text' && digits === '-' ? '' : digits;
         ({ next } = await responses.answer(s, row, survey, current.id, raw, nowIso));
       } catch (e) {
-        return { eligible: 'true', done: 'false', retry: 'true', prompt: (row.channel === 'voice' ? "Sorry, that wasn't a valid answer. " : 'Sorry, that was not a valid answer. ') + S.promptFor(current, row.channel), digits: String(S.voiceDigits(current)), question: current.id };
+        return { eligible: 'true', done: 'false', retry: 'true', prompt: (row.channel === 'voice' ? "Sorry, that wasn't a valid answer. " : 'Sorry, that was not a valid answer. ') + S.promptFor(current, row.channel), digits: String(S.voiceDigits(current)), two: String(S.voiceDigits(current) === 2), question: current.id };
       }
       if (!next) { await responses.complete(s, row, survey, nowIso, deps); return { eligible: 'true', done: 'true', outro: survey.outro }; }
-      return { eligible: 'true', done: 'false', prompt: S.promptFor(next, row.channel), digits: String(S.voiceDigits(next)), question: next.id };
+      return { eligible: 'true', done: 'false', prompt: S.promptFor(next, row.channel), digits: String(S.voiceDigits(next)), two: String(S.voiceDigits(next) === 2), question: next.id };
     }
     return { eligible: 'false', reason: 'unknown action' };
   };
