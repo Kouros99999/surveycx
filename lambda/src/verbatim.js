@@ -38,7 +38,7 @@ async function sentimentOf(clients, text, langTag) {
     const r = await clients.comprehend.send(new clients.DetectSentimentCommand({ Text: t.slice(0, 4500), LanguageCode: langOf(langTag) }));
     const s = r.SentimentScore || {};
     return { label: String(r.Sentiment || 'NEUTRAL').toLowerCase(), positive: round(s.Positive), negative: round(s.Negative), neutral: round(s.Neutral), mixed: round(s.Mixed) };
-  } catch (e) { console.warn(JSON.stringify({ sentiment: 'failed', error: e.name || e.message })); return null; }
+  } catch (e) { console.warn(JSON.stringify({ sentiment: 'failed', error: e.name, message: String(e.message || '').slice(0, 200) })); return null; }
 }
 const round = (n) => Math.round((n || 0) * 100) / 100;
 
@@ -79,7 +79,7 @@ async function extractThemes(clients, texts, langTag, modelId, maxThemes) {
     const r = await clients.bedrock.send(new clients.ConverseCommand({ modelId, messages: [{ role: 'user', content: [{ text: themePrompt(clean, langTag, maxThemes || 8) }] }], inferenceConfig: { maxTokens: 1500, temperature: 0 } }));
     const text = (((r.output || {}).message || {}).content || []).map((c) => c.text || '').join('');
     return parseThemes(text, clean, maxThemes || 8);
-  } catch (e) { console.warn(JSON.stringify({ themes: 'failed', error: e.name || e.message })); return []; }
+  } catch (e) { console.warn(JSON.stringify({ themes: 'failed', modelId, error: e.name, message: String(e.message || '').slice(0, 300), status: e.$metadata && e.$metadata.httpStatusCode })); return []; }
 }
 
 let clients;
