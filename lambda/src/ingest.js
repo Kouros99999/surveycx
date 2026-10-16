@@ -11,6 +11,7 @@
 const storeMod = require('./store.js');
 const contacts = require('./contacts.js');
 const delivery = require('./delivery.js');
+const S = require('./surveycx-core.js');
 
 const EMAIL_ATTRIBUTE = process.env.EMAIL_ATTRIBUTE || 'email';
 const TENANT_ATTRIBUTE = process.env.TENANT_ATTRIBUTE || '';   // contact attribute naming the tenant or business unit, when one instance serves several
@@ -19,7 +20,16 @@ function decode(record) { return JSON.parse(Buffer.from(record.kinesis.data, 'ba
 
 async function processContact(s, c, nowMs, deps) {
   const nowIso = new Date(nowMs).toISOString();
-  if (c.channel === 'task') return { contactId: c.contactId, action: 'ignored task' };
+  if (c.channel === 'task') {
+    // Our own low-score Task finishing is the follow-up being done: record who did it and when.
+    const target = (c.attributes || {}).surveycx_contact;
+    if (!target) return { contactId: c.contactId, action: 'ignored task' };
+    const row = await s.getResponse(target);
+    if (!row || !row.followUp || row.followUp.status !== 'open') return { contactId: c.contactId, action: 'task for a closed or unknown follow-up' };
+    row.followUp = S.closeFollowUp(row.followUp, { status: 'done', by: c.agentName || c.agent || 'connect-task' }, c.endedAt);
+    await s.putResponse(row);
+    return { contactId: c.contactId, action: 'follow-up closed by task', target };
+  }
   const row = await s.getResponse(c.contactId);
   if (row) {
     let changed = false;

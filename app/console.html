@@ -82,6 +82,7 @@
         <label><input type="checkbox" id="cl-enabled" checked> Open a Task on a low score</label>
         <label for="cl-flow">Task flow ID</label><input id="cl-flow" type="text" placeholder="the flow that routes the Task to a supervisor queue"><p class="muted">In the Connect console open the flow you want to receive the Tasks and copy the ID from its ARN (the part after <code>contact-flow/</code>).</p>
         <label for="cl-instance">Connect instance ID</label><input id="cl-instance" type="text" placeholder="only if the stack was deployed without it">
+        <label for="cl-sla">Follow-up target (hours)</label><input id="cl-sla" type="number" min="1" max="720" value="48"><p class="muted">A low score counts as overdue when its follow-up is still open after this many hours. The report shows open, overdue and median time to close.</p>
         <label for="cl-attr">Contact attribute for the agent score</label><input id="cl-attr" type="text" value="csat"><p class="muted">Written onto the contact when a survey completes, with <code>surveycx_five</code>, <code>surveycx_nps</code>, <code>surveycx_ces</code> and <code>surveycx_low</code>. Arena reads <code>csat</code> from contact records.</p>
         <div class="row end"><button class="btn" type="submit">Save</button></div>
       </form>
@@ -255,7 +256,7 @@
     if (!me.supervisor) return;
     settings = (await api('GET', '/settings')).settings;
     const cl = settings.closedLoop, d = settings.delivery, a = settings.arena, b = settings.brand;
-    $('cl-enabled').checked = cl.enabled !== false; $('cl-flow').value = cl.taskFlowId || ''; $('cl-instance').value = settings.connectInstanceId || ''; $('cl-attr').value = cl.attribute || 'csat';
+    $('cl-enabled').checked = cl.enabled !== false; $('cl-flow').value = cl.taskFlowId || ''; $('cl-instance').value = settings.connectInstanceId || ''; $('cl-attr').value = cl.attribute || 'csat'; $('cl-sla').value = cl.slaHours || 48;
     $('d-freq').value = d.frequencyDays; $('d-qs').value = d.quietStart; $('d-qe').value = d.quietEnd; $('d-rem').value = d.reminderHours; $('d-sms-from').value = d.smsOrigination || ''; $('d-email-from').value = d.emailFrom || ''; $('d-sms-text').value = d.smsText; $('d-email-subject').value = d.emailSubject; $('d-email-text').value = d.emailText;
     $('a-url').value = a.ingestUrl || ''; $('a-key').value = a.key || '';
     $('b-name').value = b.name || ''; $('b-accent').value = b.accent || '#0f766e'; $('b-logo').value = b.logoUrl || '';
@@ -266,7 +267,7 @@
     $('settings-nav').innerHTML = ['s-closed:Closed loop', 's-delivery:Invitations', 's-arena:Arena', 's-brand:Brand', 's-analysis:Verbatim analysis', 's-hooks:Webhooks', 's-keys:Other platforms and BI', 's-privacy:Privacy requests'].map((x) => { const [id, label] = x.split(':'); return `<a href="#${id}" style="display:block;padding:.4rem .2rem;border-top:1px solid var(--line);text-decoration:none;color:var(--ink)">${label}</a>`; }).join('');
   }
   const save = async (patch, msg) => { try { settings = (await api('PUT', '/settings', patch)).settings; toast(msg || 'Saved'); applyBrand(settings.brand); } catch (err) { toast(err.message, true); } };
-  $('s-closed').onsubmit = (e) => { e.preventDefault(); save({ closedLoop: { enabled: $('cl-enabled').checked, taskFlowId: $('cl-flow').value.trim(), attribute: $('cl-attr').value.trim() || 'csat' }, connectInstanceId: $('cl-instance').value.trim() }); };
+  $('s-closed').onsubmit = (e) => { e.preventDefault(); save({ closedLoop: { enabled: $('cl-enabled').checked, taskFlowId: $('cl-flow').value.trim(), attribute: $('cl-attr').value.trim() || 'csat', slaHours: +$('cl-sla').value || 48 }, connectInstanceId: $('cl-instance').value.trim() }); };
   $('s-delivery').onsubmit = (e) => { e.preventDefault(); save({ delivery: { frequencyDays: +$('d-freq').value, quietStart: +$('d-qs').value, quietEnd: +$('d-qe').value, reminderHours: +$('d-rem').value, smsOrigination: $('d-sms-from').value.trim(), emailFrom: $('d-email-from').value.trim(), smsText: $('d-sms-text').value, emailSubject: $('d-email-subject').value, emailText: $('d-email-text').value } }); };
   $('s-arena').onsubmit = (e) => { e.preventDefault(); save({ arena: { ingestUrl: $('a-url').value.trim(), key: $('a-key').value.trim() } }); };
   $('a-test').onclick = async () => { try { await api('POST', '/settings/arena/test', { agent: $('a-test-agent').value.trim() }); toast('Arena accepted a test score of 5'); } catch (err) { toast(err.message, true); } };

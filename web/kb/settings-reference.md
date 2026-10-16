@@ -26,7 +26,7 @@
 
 ## Console settings
 
-**Closed loop**: open a Task on a low score (on/off), task flow ID, Connect instance ID, the attribute name for the agent score (`csat`).
+**Closed loop**: open a Task on a low score (on/off), task flow ID, Connect instance ID, the attribute name for the agent score (`csat`), follow-up target in hours (48).
 
 **Invitations**: frequency cap in days, send window hours, reminder hours, SMS origination identity, email sender, SMS text, email subject and text.
 

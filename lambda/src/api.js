@@ -8,6 +8,8 @@
  *   GET /report?from&to[&surveyId][&agent][&queue]        aggregate by agent, queue, driver, day, channel, plus the newest verbatim themes (agents: own rows only, no themes)
  *   GET /responses?from&to[&surveyId][&agent][&queue][&low=1]  the rows behind the report (agents: own rows only)
  *   GET /responses/{contactId}, DELETE /responses/{contactId}   one response; delete removes it (supervisors)
+ *   PUT  /responses/{contactId}/followup { status: done|dismissed|open, outcome?, note? }   close or reopen the follow-up on a low score (supervisors)
+ *   PUT  /ingest/{key}/responses/{contactId}/followup           the same from a partner's own UI; { by } names who acted
  *   GET /export.csv?from&to                               CSV download (supervisors)
  *   POST /privacy/delete { phone | email | contactId }    delete everything about a customer or a contact (supervisors)
  *   GET /agents                                           agents seen so far
@@ -54,6 +56,8 @@ function route(method, path) {
   if (method === 'POST' && path === '/settings/arena/test') return { name: 'testArena' };
   if (method === 'GET' && path === '/report') return { name: 'report' };
   if (method === 'GET' && path === '/responses') return { name: 'listResponses' };
+  if (method === 'PUT' && (x = m(/^\/responses\/([^/]+)\/followup$/))) return { name: 'putFollowUp', id: decodeURIComponent(x[1]) };
+  if (method === 'PUT' && (x = m(/^\/ingest\/([^/]+)\/responses\/([^/]+)\/followup$/))) return { name: 'ingestFollowUp', key: decodeURIComponent(x[1]), id: decodeURIComponent(x[2]), public: true };
   if (method === 'GET' && (x = m(/^\/responses\/([^/]+)$/))) return { name: 'getResponse', id: decodeURIComponent(x[1]) };
   if (method === 'DELETE' && (x = m(/^\/responses\/([^/]+)$/))) return { name: 'deleteResponse', id: decodeURIComponent(x[1]) };
   if (method === 'GET' && path === '/export.csv') return { name: 'exportCsv' };
@@ -79,7 +83,7 @@ const SECRET_KEYS = ['key'];
 function publicSettings(s) {
   const out = JSON.parse(JSON.stringify(s || {}));
   out.delivery = Object.assign({}, delivery.DEFAULTS, out.delivery || {});
-  out.closedLoop = Object.assign({ enabled: true, attribute: 'csat', taskFlowId: '' }, out.closedLoop || {});
+  out.closedLoop = Object.assign({ enabled: true, attribute: 'csat', taskFlowId: '', slaHours: 48 }, out.closedLoop || {});
   out.arena = Object.assign({ ingestUrl: '' }, out.arena || {});
   if (out.arena.key) out.arena.key = '••••' + String(out.arena.key).slice(-4);
   out.webhooks = (out.webhooks || []).map((w) => Object.assign({}, w, { secret: w.secret ? '••••' + String(w.secret).slice(-4) : '' }));
@@ -96,6 +100,7 @@ function mergeSettings(cur, body) {
   if (body.connectInstanceId !== undefined) out.connectInstanceId = String(body.connectInstanceId || '').trim().slice(0, 100);
   if (body.siteUrl !== undefined) out.siteUrl = String(body.siteUrl || '').trim().replace(/\/$/, '').slice(0, 200);
   if (out.arena && typeof out.arena.key === 'string' && out.arena.key.startsWith('••••')) out.arena.key = (cur && cur.arena && cur.arena.key) || '';
+  if (out.closedLoop && out.closedLoop.slaHours !== undefined) out.closedLoop.slaHours = Math.max(1, Math.min(720, +out.closedLoop.slaHours || 48));
   if (out.delivery) { for (const k of ['frequencyDays', 'quietStart', 'quietEnd', 'reminderHours']) if (out.delivery[k] !== undefined) out.delivery[k] = Math.max(0, Math.min(k === 'frequencyDays' ? 365 : k === 'reminderHours' ? 168 : 24, +out.delivery[k] || 0)); }
   if (out.brand) { out.brand.name = String(out.brand.name || '').slice(0, 60); if (out.brand.accent && !/^#[0-9a-f]{6}$/i.test(out.brand.accent)) out.brand.accent = '#0f766e'; out.brand.logoUrl = String(out.brand.logoUrl || '').slice(0, 300); }
   return out;
@@ -159,7 +164,7 @@ function makeHandler(deps) {
           const { from, to } = rangeOf(qs);
           const rows = filterRows(await s.responsesBetween(from, to), qs, claims);
           const surveys = await s.listSurveys();
-          if (r.name === 'report') return json(200, Object.assign({ from, to, surveys: surveys.map((x) => ({ id: x.id, name: x.name, status: x.status })), themes: sup ? await s.getThemes(qs.surveyId || '*', to) : undefined }, S.aggregate(rows, surveys)));
+          if (r.name === 'report') return json(200, Object.assign({ from, to, surveys: surveys.map((x) => ({ id: x.id, name: x.name, status: x.status })), themes: sup ? await s.getThemes(qs.surveyId || '*', to) : undefined }, S.aggregate(rows, surveys, { slaHours: ((await s.getSettings()).closedLoop || {}).slaHours, nowMs: now().getTime() })));
           if (r.name === 'listResponses') return json(200, { from, to, responses: rows.slice(-1000).reverse().map((x) => forViewer(x, claims)) });
           return { statusCode: 200, headers: { 'content-type': 'text/csv; charset=utf-8', 'content-disposition': `attachment; filename="surveycx-${from}-${to}.csv"`, 'access-control-allow-origin': ORIGIN, 'cache-control': 'no-store' }, body: S.toCsv(rows, surveys) };
         }
@@ -167,6 +172,20 @@ function makeHandler(deps) {
           const x = await s.getResponse(r.id);
           if (!x || (!sup && x.agentArn !== claims['custom:agentArn'])) return json(404, { error: 'not found' });
           return json(200, { response: forViewer(x, claims), survey: await s.getSurvey(x.surveyId) });
+        }
+        case 'putFollowUp': case 'ingestFollowUp': {
+          let by;
+          if (r.name === 'putFollowUp') { if (!sup) return json(403, { error: 'supervisors only' }); by = who(claims); }
+          else { const ik = await keyOf(r.key, 'ingest'); if (!ik) return json(401, { error: 'ingest key is invalid or expired' }); by = String(parse(event).by || ik.label || 'partner').slice(0, 120); }
+          const x = await s.getResponse(r.id);
+          if (!x) return json(404, { error: 'not found' });
+          if (!x.scores || !x.scores.low) return json(409, { error: 'this response is not a low score; there is nothing to follow up' });
+          const b = parse(event);
+          if (!['done', 'dismissed', 'open'].includes(b.status)) return json(400, { error: 'status must be done, dismissed or open' });
+          x.followUp = S.closeFollowUp(x.followUp, { status: b.status, outcome: b.outcome, note: b.note, by }, now().toISOString());
+          await s.putResponse(x);
+          console.info(JSON.stringify({ audit: 'followUp', by, contactId: r.id, status: b.status, outcome: x.followUp.outcome }));
+          return json(200, { contactId: r.id, followUp: x.followUp });
         }
         case 'deleteResponse': { if (!sup) return json(403, { error: 'supervisors only' }); const ok = await s.deleteResponse(r.id); console.info(JSON.stringify({ audit: 'deleteResponse', by: who(claims), contactId: r.id })); return ok ? json(200, { deleted: r.id }) : json(404, { error: 'not found' }); }
         case 'privacyDelete': {
@@ -280,7 +299,7 @@ function makeHandler(deps) {
           const { from, to } = rangeOf(qs), tenant = dk.tenant || qs.tenant;
           const surveys = await s.listSurveys();
           const rows = (await s.responsesBetween(from, to)).filter((x) => (!qs.surveyId || x.surveyId === qs.surveyId) && (!qs.queue || x.queue === qs.queue) && (!qs.agent || x.agentArn === qs.agent) && (!tenant || x.tenant === tenant));
-          return json(200, Object.assign({ from, to, tenant, version: VERSION, surveys: surveys.map((x) => ({ id: x.id, name: x.name, status: x.status })), themes: tenant ? undefined : await s.getThemes(qs.surveyId || '*', to) }, S.aggregate(rows, surveys)));
+          return json(200, Object.assign({ from, to, tenant, version: VERSION, surveys: surveys.map((x) => ({ id: x.id, name: x.name, status: x.status })), themes: tenant ? undefined : await s.getThemes(qs.surveyId || '*', to) }, S.aggregate(rows, surveys, { slaHours: ((await s.getSettings()).closedLoop || {}).slaHours, nowMs: now().getTime() })));
         }
         case 'dataResponses': {
           const dk = await keyOf(r.key, 'data'); if (!dk) return json(401, { error: 'data key is invalid or expired' });

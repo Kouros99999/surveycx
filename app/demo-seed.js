@@ -31,6 +31,7 @@
             if (survey === def) { row.answers.resolved = good ? 1 : rnd() < 0.4 ? 1 : 0; row.answers.effort = good ? 5 + Math.floor(rnd() * 3) : 1 + Math.floor(rnd() * 4); row.answers.nps = good ? 7 + Math.floor(rnd() * 4) : Math.floor(rnd() * 7); if (csat <= 3 && channel !== 'voice') row.answers.why = pick(COMMENTS); }
             else { row.answers.reason = 1 + Math.floor(rnd() * 4); row.answers.nps = good ? 8 + Math.floor(rnd() * 3) : Math.floor(rnd() * 7); }
             row.completedAt = new Date(Date.parse(at) + 120000).toISOString(); row.scores = S.scoreResponse(survey, row.answers);
+            if (row.scores.low) { row.followUp = S.openFollowUp(row.completedAt); if (rnd() < 0.6) row.followUp = S.closeFollowUp(row.followUp, { status: 'done', by: 'Sam Supervisor', outcome: rnd() < 0.7 ? 'recovered' : 'not-recovered' }, new Date(Date.parse(row.completedAt) + Math.floor(rnd() * 90) * 3600000).toISOString()); }
             if (row.answers.why) row.sentiment = { label: /thank|great|friendly|clear/i.test(row.answers.why) ? 'positive' : 'negative', positive: 0.1, negative: 0.8, neutral: 0.1, mixed: 0 };
           }
         }

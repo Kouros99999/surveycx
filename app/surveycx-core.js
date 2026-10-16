@@ -214,7 +214,8 @@
    * Aggregate completed responses: overall, by agent, by queue, by driver (question), by day. Each group carries
    * n, csat, nps, ces, five, low count. `rows` are stored responses with scores already computed. Pure.
    */
-  function aggregate(rows, surveys) {
+  function aggregate(rows, surveys, opts) {
+    opts = opts || {};
     const byId = Object.fromEntries((surveys || []).map((s) => [s.id, s]));
     const group = () => ({ n: 0, offered: 0, started: 0, ratings: [], nps: [], ces: [], fives: [], low: 0, comments: 0, positive: 0, negative: 0 });
     const overall = group(), agents = {}, queues = {}, days = {}, drivers = {}, channels = {}, tenants = {};
@@ -254,7 +255,9 @@
     }
     const fin = (g) => { const c = csatOf(g.ratings); return Object.assign({}, g, { csat: c.mean, csatPct: c.pct, nps: npsOf(g.nps), ces: g.ces.length ? round1(g.ces.reduce((a, b) => a + b, 0) / g.ces.length) : null, five: g.fives.length ? round1(g.fives.reduce((a, b) => a + b, 0) / g.fives.length) : null, completion: g.offered ? Math.round((g.n / g.offered) * 100) : null, ratings: undefined, fives: undefined, ces_: undefined }); };
     const list = (o) => Object.values(o).map(fin).sort((x, y) => (y.n - x.n) || String(x.id).localeCompare(String(y.id)));
-    return { overall: fin(overall), agents: list(agents), queues: list(queues), drivers: list(drivers), channels: list(channels), tenants: list(tenants), days: Object.values(days).map(fin).sort((x, y) => x.id.localeCompare(y.id)) };
+    const withFollowUp = (g, pick) => Object.assign(g, { followUp: followUpStats(rows.filter(pick), opts.slaHours, opts.nowMs) });
+    const out = { overall: withFollowUp(fin(overall), () => true), agents: list(agents), queues: list(queues).map((g) => withFollowUp(g, (r) => (r.queue || 'unassigned') === g.id)), drivers: list(drivers), channels: list(channels), tenants: list(tenants), days: Object.values(days).map(fin).sort((x, y) => x.id.localeCompare(y.id)) };
+    return out;
   }
 
   /** CSV of responses, one row per response with a column per question. Quotes and commas escaped. */
@@ -262,14 +265,41 @@
     const byId = Object.fromEntries((surveys || []).map((s) => [s.id, s]));
     const qcols = [];
     for (const s of surveys || []) for (const q of s.questions) if (!qcols.some((c) => c.id === q.id)) qcols.push({ id: q.id, label: `${s.name}: ${q.text}` });
-    const head = ['contactId', 'tenant', 'survey', 'channel', 'queue', 'agent', 'agentArn', 'status', 'startedAt', 'completedAt', 'csat', 'nps', 'ces', 'five', 'low', 'sentiment', ...qcols.map((c) => c.label)];
+    const head = ['contactId', 'tenant', 'survey', 'channel', 'queue', 'agent', 'agentArn', 'status', 'startedAt', 'completedAt', 'csat', 'nps', 'ces', 'five', 'low', 'sentiment', 'followUp', 'followUpHours', 'followUpOutcome', ...qcols.map((c) => c.label)];
     const esc = (v) => { const s = v == null ? '' : String(v); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
     const lines = [head.map(esc).join(',')];
     for (const r of rows) {
       const s = byId[r.surveyId], sc = r.scores || {};
-      lines.push([r.contactId, r.tenant, s ? s.name : r.surveyId, r.channel, r.queue, r.agentName, r.agentArn, r.status, r.startedAt, r.completedAt, sc.csat, sc.nps, sc.ces, sc.five, sc.low ? 'yes' : '', r.sentiment ? r.sentiment.label : '', ...qcols.map((c) => (r.answers || {})[c.id])].map(esc).join(','));
+      lines.push([r.contactId, r.tenant, s ? s.name : r.surveyId, r.channel, r.queue, r.agentName, r.agentArn, r.status, r.startedAt, r.completedAt, sc.csat, sc.nps, sc.ces, sc.five, sc.low ? 'yes' : '', r.sentiment ? r.sentiment.label : '', r.followUp ? r.followUp.status : '', r.followUp ? r.followUp.hours : '', r.followUp ? r.followUp.outcome : '', ...qcols.map((c) => (r.answers || {})[c.id])].map(esc).join(','));
     }
     return lines.join('\n') + '\n';
+  }
+
+  /**
+   * Follow-up on a low score: { status: 'open'|'done'|'dismissed', openedAt, closedAt?, by?, note?, outcome?, taskId?, hours? }.
+   * openFollowUp starts one; closeFollowUp records who acted, when and the outcome (recovered | not-recovered | no-contact). Pure.
+   */
+  const FOLLOWUP_OUTCOMES = ['recovered', 'not-recovered', 'no-contact'];
+  function openFollowUp(nowIso, taskId) { return { status: 'open', openedAt: nowIso, taskId: taskId || undefined }; }
+  function closeFollowUp(current, patch, nowIso) {
+    const cur = current || openFollowUp(nowIso);
+    const status = patch.status === 'dismissed' ? 'dismissed' : patch.status === 'open' ? 'open' : 'done';
+    const out = Object.assign({}, cur, { status, note: patch.note !== undefined ? str(patch.note, 500) || undefined : cur.note, by: str(patch.by, 120) || cur.by, outcome: FOLLOWUP_OUTCOMES.includes(patch.outcome) ? patch.outcome : status === 'done' ? cur.outcome : undefined });
+    if (status === 'open') { delete out.closedAt; delete out.hours; }
+    else { out.closedAt = nowIso; out.hours = Math.round((Date.parse(nowIso) - Date.parse(cur.openedAt || nowIso)) / 36000) / 100; }
+    for (const k of Object.keys(out)) if (out[k] === undefined) delete out[k];
+    return out;
+  }
+  /** Follow-up figures for a set of responses: open, overdue (open longer than slaHours), done, dismissed, median hours to close, share closed within the SLA. */
+  function followUpStats(rows, slaHours, nowMs) {
+    const sla = slaHours || 48, now = nowMs || Date.now();
+    const f = rows.map((r) => r.followUp).filter(Boolean);
+    const open = f.filter((x) => x.status === 'open'), done = f.filter((x) => x.status === 'done'), dismissed = f.filter((x) => x.status === 'dismissed');
+    const overdue = open.filter((x) => now - Date.parse(x.openedAt) > sla * 3600000).length;
+    const hours = done.map((x) => x.hours).filter((h) => Number.isFinite(h)).sort((a, b) => a - b);
+    const median = hours.length ? (hours.length % 2 ? hours[(hours.length - 1) / 2] : round1((hours[hours.length / 2 - 1] + hours[hours.length / 2]) / 2)) : null;
+    const recovered = done.filter((x) => x.outcome === 'recovered').length;
+    return { flagged: f.length, open: open.length, overdue, done: done.length, dismissed: dismissed.length, medianHours: median, withinSla: done.length ? Math.round((hours.filter((h) => h <= sla).length / done.length) * 100) : null, recovered, slaHours: sla };
   }
 
   /** A starter survey a new stack ships with. */
@@ -281,5 +311,5 @@
     { id: 'why', type: 'text', text: 'What could we have done better?', skipUnless: { question: 'csat', atMost: 3 } } ],
     lowScore: { enabled: true, threshold: 2, question: 'any' } };
 
-  return { TYPES, CHANNELS, MAX_QUESTIONS, CONTROL_ATTRIBUTE, normalizeSurvey, pickSurvey, sampled, nextQuestion, parseAnswer, voicePrompt, voiceDigits, chatPrompt, promptFor, scoreResponse, npsOf, csatOf, toFive, aggregate, toCsv, DEFAULT_SURVEY };
+  return { TYPES, CHANNELS, MAX_QUESTIONS, CONTROL_ATTRIBUTE, FOLLOWUP_OUTCOMES, openFollowUp, closeFollowUp, followUpStats, normalizeSurvey, pickSurvey, sampled, nextQuestion, parseAnswer, voicePrompt, voiceDigits, chatPrompt, promptFor, scoreResponse, npsOf, csatOf, toFive, aggregate, toCsv, DEFAULT_SURVEY };
 });

@@ -168,3 +168,44 @@ test('tenants: a tenant-bound ingest key tags what it creates; a tenant-bound da
   r = await call(h, 'GET', '/report', null, sup, { tenant: 'acme' }); assert.equal(r.json.overall.n, 2);
   assert.match(S.toCsv(await s.responsesBetween('2026-10-11', '2026-10-11'), await s.listSurveys()).split('\n')[1], /^a1,acme,/);
 });
+
+test('follow-up: opened on a low score, closed by a Task record, the console or a partner; report counts open, overdue, median and within-target', async () => {
+  const s = mem.make(); await s.putSurvey(S.normalizeSurvey({ id: 'default', name: 'D', questions: [{ id: 'csat', type: 'rating', text: 'x' }], lowScore: { threshold: 2 } }));
+  await s.putSettings({ siteUrl: 'https://site.test', closedLoop: { enabled: true, taskFlowId: 'f1', slaHours: 24 }, connectInstanceId: 'inst' });
+  const sent = [];
+  const clients = { connect: { send: async (c) => { sent.push(c); return c.kind === 'task' ? { ContactId: 'task-1' } : {}; } }, UpdateContactAttributesCommand: function (i) { this.kind = 'attrs'; this.input = i; }, StartTaskContactCommand: function (i) { this.kind = 'task'; this.input = i; } };
+  const t0 = Date.parse('2026-10-11T10:00:00Z');
+  let clock = t0;
+  const h = api.makeHandler({ store: s, now: () => new Date(clock), clients, post: async () => {} });
+  const ik = (await call(h, 'POST', '/keys', { kind: 'ingest', label: 'VeriCX' }, sup)).json.key, dk = (await call(h, 'POST', '/keys', { kind: 'data' }, sup)).json.key;
+  const invite = async (id, platform) => (await call(h, 'POST', '/ingest/' + ik + '/invitations', { contactId: id, agent: 'a', queue: 'Care', platform })).json.token;
+  // 1. low score on Connect: follow-up opens with the Task id
+  const t1 = await invite('c1', 'connect'); await call(h, 'POST', '/s/' + t1 + '/answers', { answers: { csat: 1 } });
+  let r1 = await s.getResponse('c1'); assert.equal(r1.followUp.status, 'open'); assert.equal(r1.followUp.taskId, 'task-1'); assert.equal(r1.followUp.openedAt, '2026-10-11T10:00:00.000Z');
+  // a good score has none
+  const t2 = await invite('c2', 'connect'); await call(h, 'POST', '/s/' + t2 + '/answers', { answers: { csat: 5 } }); assert.equal((await s.getResponse('c2')).followUp, undefined);
+  assert.equal((await call(h, 'PUT', '/responses/c2/followup', { status: 'done' }, sup)).statusCode, 409);
+  // 2. the Task's contact record closes it 3 hours later, naming the agent
+  const ingest = require('./ingest.js'), contacts = require('./contacts.js');
+  const out = await ingest.processContact(s, contacts.fromContactRecord({ ContactId: 'task-1', Channel: 'TASK', DisconnectTimestamp: '2026-10-11T13:00:00Z', Agent: { ARN: 'arn:sup', Username: 'sam' }, Attributes: { surveycx_contact: 'c1' } }), t0 + 3 * 3600000, { clients });
+  assert.equal(out.action, 'follow-up closed by task'); r1 = await s.getResponse('c1'); assert.equal(r1.followUp.status, 'done'); assert.equal(r1.followUp.by, 'sam'); assert.equal(r1.followUp.hours, 3);
+  assert.equal((await ingest.processContact(s, contacts.fromContactRecord({ ContactId: 'task-9', Channel: 'TASK', DisconnectTimestamp: '2026-10-11T13:00:00Z', Attributes: {} }), t0, { clients })).action, 'ignored task');
+  // 3. a supervisor closes one from the console with an outcome; a partner closes one through its key; one stays open past the target
+  for (const [id, platform] of [['c3', 'vericx'], ['c4', 'vericx'], ['c5', 'vericx']]) { const t = await invite(id, platform); await call(h, 'POST', '/s/' + t + '/answers', { answers: { csat: 2 } }); }
+  clock = t0 + 10 * 3600000;
+  let r = await call(h, 'PUT', '/responses/c3/followup', { status: 'done', outcome: 'recovered', note: 'Called back, credited the fee' }, sup);
+  assert.equal(r.json.followUp.status, 'done'); assert.equal(r.json.followUp.outcome, 'recovered'); assert.equal(r.json.followUp.hours, 10); assert.equal(r.json.followUp.by, 'boss');
+  assert.equal((await call(h, 'PUT', '/responses/c3/followup', { status: 'done' }, agent('a'))).statusCode, 403);
+  r = await call(h, 'PUT', '/ingest/' + ik + '/responses/c4/followup', { status: 'dismissed', by: 'vericx-user-7', note: 'test call' }); assert.equal(r.json.followUp.status, 'dismissed'); assert.equal(r.json.followUp.by, 'vericx-user-7');
+  assert.equal((await call(h, 'PUT', '/ingest/bad/responses/c4/followup', { status: 'done' })).statusCode, 401);
+  assert.equal((await call(h, 'PUT', '/responses/c5/followup', { status: 'maybe' }, sup)).statusCode, 400);
+  clock = t0 + 30 * 3600000;   // c5 is now 30h open against a 24h target
+  r = await call(h, 'GET', '/report', null, sup, { from: '2026-10-11', to: '2026-10-12' });
+  assert.deepEqual(r.json.overall.followUp, { flagged: 4, open: 1, overdue: 1, done: 2, dismissed: 1, medianHours: 6.5, withinSla: 100, recovered: 1, slaHours: 24 });
+  assert.equal(r.json.queues.find((q) => q.id === 'Care').followUp.open, 1);
+  r = await call(h, 'GET', '/data/' + dk + '/report', null, null, { from: '2026-10-11', to: '2026-10-12' }); assert.equal(r.json.overall.followUp.overdue, 1);
+  // reopen, then CSV carries the columns
+  r = await call(h, 'PUT', '/responses/c3/followup', { status: 'open' }, sup); assert.equal(r.json.followUp.status, 'open'); assert.equal(r.json.followUp.closedAt, undefined);
+  const csv = S.toCsv(await s.responsesBetween('2026-10-11', '2026-10-12'), await s.listSurveys());
+  assert.match(csv.split('\n')[0], /,followUp,followUpHours,followUpOutcome,/); assert.match(csv, /c1,.*,done,3,,/);
+});

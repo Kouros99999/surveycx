@@ -8,6 +8,8 @@ The sentence at the top compares the chosen period with the one before it: *130 
 
 **CSAT %** is top-two-box: the share of rating answers that were 4 or 5. **NPS** is promoters (9-10) minus detractors (0-6), as a whole number from -100 to 100. **Effort** is the average on the 1-7 scale.
 
+**Follow-ups.** When low scores exist, two more tiles show follow-ups open (with the overdue count) and the median hours to follow up with the share inside the target; see [Closed loop](kb.html?a=closed-loop). Open a low-score response to mark it followed up, with an outcome.
+
 ## Filters
 
 Period (7, 30, 90 days or custom, up to 92 days), survey, queue, agent, tenant (shown when responses carry one), and *low scores only*. Every table and the export follow the filters; a *By tenant* table appears when tenants are in use.

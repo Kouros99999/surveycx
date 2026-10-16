@@ -51,6 +51,10 @@ Each response is stored, scored and closed-loop processed like SurveyCX's own (T
 - `POST /api/s/{token}/answers { "answers": { "csat": 4 }, "finish": false }` save one or more answers; the survey completes when every required question is answered unless `finish` is false;
 - `POST /api/s/{token}/optout`.
 
+## Close a follow-up from your own UI
+
+`PUT /api/ingest/{ingestKey}/responses/{contactId}/followup` with `{ "status": "done" | "dismissed" | "open", "outcome": "recovered" | "not-recovered" | "no-contact", "note": "...", "by": "who acted" }`. Only low-score responses have a follow-up (409 otherwise). The response row's `followUp` (`status`, `openedAt`, `closedAt`, `hours`, `by`, `outcome`, `note`, `taskId`) is in webhooks, the data rows and the report's `overall.followUp` and per-queue `followUp` (`open`, `overdue`, `done`, `dismissed`, `medianHours`, `withinSla`, `recovered`, `slaHours`).
+
 ## Read results
 
 `GET /api/data/{key}/responses?from=2026-10-01&to=2026-10-31` the rows (one per response, with `answers` and `scores`), up to 92 days per call.

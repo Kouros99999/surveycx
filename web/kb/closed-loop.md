@@ -38,6 +38,16 @@ Every completed response is put on the account's default EventBridge bus with so
 
 The agent-attributable score goes to Arena through its ingest endpoint. See [Feeding Arena](kb.html?a=arena).
 
+## Did anyone follow up?
+
+Every low score opens a **follow-up** on the response. It is closed in one of three ways:
+
+- the Connect Task opened for it is completed by whoever worked it (the contact record of the Task closes the follow-up and names the agent), or
+- a supervisor opens the response on the results page and clicks **Mark followed up**, choosing an outcome (customer recovered, not recovered, could not reach) and an optional note, or
+- a partner's application calls `PUT /api/ingest/{key}/responses/{contactId}/followup`.
+
+*Settings > Closed loop* has a **follow-up target** in hours (48 by default). The results page shows how many follow-ups are open, how many are overdue, the median time to follow up and the share done within target, overall and per queue; the queue table and the data API carry the same figures, and the CSV has the status, hours and outcome per response. A follow-up can be dismissed (a prank answer, a wrong number) or reopened.
+
 ## Timing
 
 On voice and chat the agent is known only once the contact record arrives, a few minutes after the call. The Task, the attributes and the event go out at completion; the Arena score and the agent on the Task name follow when the record lands, and the attributes are refreshed then as well. Invitations by SMS and email complete whenever the customer answers.

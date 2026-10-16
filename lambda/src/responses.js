@@ -46,6 +46,8 @@ async function complete(store, row, survey, nowIso, deps) {
   if (row.status === 'completed') return row;
   row.status = 'completed'; row.completedAt = nowIso;
   row.scores = S.scoreResponse(survey, row.answers);
+  // A low score opens a follow-up that someone has to close (a Connect Task closing does it automatically).
+  if (row.scores.low && !row.followUp) row.followUp = S.openFollowUp(nowIso);
   // Sentiment of what the customer wrote (redacted before it leaves the table). Off when the stack has no analysis or the settings say so.
   const settingsEarly = await store.getSettings();
   if (process.env.VERBATIM_ANALYSIS === 'enabled' && !(settingsEarly.analysis && settingsEarly.analysis.sentiment === false)) {
@@ -54,7 +56,7 @@ async function complete(store, row, survey, nowIso, deps) {
   }
   await store.putResponse(row);
   if (row.customerHash) await store.touchCustomer(row.customerHash, { lastCompletedAt: nowIso });
-  await closeLoop(row, survey, settingsEarly, deps || {});
+  await closeLoop(row, survey, settingsEarly, Object.assign({ store }, deps || {}));
   return row;
 }
 
@@ -84,9 +86,10 @@ async function closeLoop(row, survey, settings, deps) {
       if (instanceId && process.env.CONNECT_INSTANCE_URL) refs['Contact details'] = { Type: 'URL', Value: `${process.env.CONNECT_INSTANCE_URL.replace(/\/$/, '')}/contact-trace-records/details/${row.contactId}` };
       const siteUrl = process.env.SITE_URL || settings.siteUrl;
       if (siteUrl) refs['Survey response'] = { Type: 'URL', Value: `${siteUrl}/results.html#contact=${row.contactId}` };
-      await c.connect.send(new c.StartTaskContactCommand({ InstanceId: instanceId, ContactFlowId: cl.taskFlowId, Name: `Low survey score: ${sc.five} of 5${row.agentName ? ' (' + row.agentName + ')' : ''}`,
+      const task = await c.connect.send(new c.StartTaskContactCommand({ InstanceId: instanceId, ContactFlowId: cl.taskFlowId, Name: `Low survey score: ${sc.five} of 5${row.agentName ? ' (' + row.agentName + ')' : ''}`,
         Description: `${survey.name}, ${row.channel}, queue ${row.queue || 'unknown'}.\n` + lines.join('\n').slice(0, 4000), References: refs, PreviousContactId: row.contactId, ClientToken: ('low-' + row.contactId).slice(0, 500),
         Attributes: { surveycx_contact: row.contactId, surveycx_five: String(sc.five), surveycx_agent: row.agentArn || '' } }));
+      if (task && task.ContactId && row.followUp && !row.followUp.taskId) { row.followUp.taskId = task.ContactId; await (deps.store || require('./store.js')).putResponse(row); }
     } catch (e) { log('task', e); }
   }
   // 3. An event per response for anything else the customer wants to wire up (Slack, CRM, warehouse).
@@ -99,7 +102,7 @@ async function closeLoop(row, survey, settings, deps) {
     const wants = w.events || ['completed'];
     if (!w.url || !(wants.includes('completed') || (sc.low && wants.includes('low')))) continue;   // 'low' alone means only low scores
     try {
-      const body = { event: sc.low ? 'survey.completed.low' : 'survey.completed', contactId: row.contactId, tenant: row.tenant, surveyId: survey.id, surveyName: survey.name, platform: row.platform, channel: row.channel, queue: row.queue, agent: row.agentArn, agentName: row.agentArn ? row.agentName : undefined, scores: sc, sentiment: row.sentiment, answers: row.answers, startedAt: row.startedAt, completedAt: row.completedAt };
+      const body = { event: sc.low ? 'survey.completed.low' : 'survey.completed', contactId: row.contactId, tenant: row.tenant, surveyId: survey.id, surveyName: survey.name, platform: row.platform, channel: row.channel, queue: row.queue, agent: row.agentArn, agentName: row.agentArn ? row.agentName : undefined, scores: sc, sentiment: row.sentiment, followUp: row.followUp, answers: row.answers, startedAt: row.startedAt, completedAt: row.completedAt };
       await (deps.post || exports.post)(w.url, body, w.secret ? { 'x-surveycx-signature': 'sha256=' + crypto.createHmac('sha256', w.secret).update(JSON.stringify(body)).digest('hex') } : {});
     } catch (e) { log('webhook', e); }
   }
