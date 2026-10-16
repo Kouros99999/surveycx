@@ -18,7 +18,7 @@ No telemetry, no phone-home, no third-party services.
 
 Per response: the contact id, survey id, agent id and name, queue, channel, status, timestamps, the answers (including free text) and the scores. Phone numbers and email addresses are stored **only as SHA-256 hashes**, used for the frequency cap and the opt-out list; the queued invitation holds the address until it is sent, for at most a day. The web survey link is a random token with a 14-day life.
 
-Free-text answers may contain whatever the customer typed. SurveyCX does not send them to any AI service. Redaction before any future AI processing is a design rule for this product.
+Free-text answers may contain whatever the customer typed. With **VerbatimAnalysis** disabled (the default) they never leave the table. With it enabled, a redacted copy (emails, phone, card and account numbers, ids, links and self-identification masked) is sent to Amazon Comprehend and Amazon Bedrock in your own account and region for sentiment and themes; neither service trains on your data. See [Verbatim analysis](kb.html?a=verbatim-analysis).
 
 ## Retention and deletion
 
